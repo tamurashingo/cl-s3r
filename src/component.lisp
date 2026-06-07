@@ -3,7 +3,8 @@
   (:import-from :alexandria
                 #:make-keyword)
   (:import-from #:cl-s3r.renderer
-                #:render-html)
+                #:render-html
+                #:*component-expander*)
   (:export #:define-component
            #:let-component-state
            #:let-function
@@ -12,7 +13,9 @@
            #:*current-component-functions*
            #:*sync-component-state*
            #:call-component-action
-           #:render-component))
+           #:render-component
+           #:render-component-html
+           #:normalize-state-keys))
 
 (in-package #:cl-s3r.component)
 
@@ -63,8 +66,12 @@
            (if (and (listp result) (keywordp (car result)))
                (let ((tag (car result))
                      (rest (cdr result))
-                     (state-json (jonathan:to-json *current-component-state*)))
-                 (if (and (listp (car rest)) (eq (caar rest) '@))
+                     (state-json (if *current-component-state*
+                                     (jonathan:to-json *current-component-state*)
+                                     "{}")))
+                 (if (and (listp (car rest))
+                          (symbolp (caar rest))
+                          (string= (string (caar rest)) "@"))
                      `(,tag (@ (data-state ,state-json) (data-component ,(string ,component-name)) ,@(cdar rest)) ,@(cdr rest))
                      `(,tag (@ (data-state ,state-json) (data-component ,(string ,component-name))) ,@rest)))
                result)))
@@ -100,8 +107,10 @@
                   (format t "Warning: Action ~A not found in component ~A (Available: ~S)~%"
                           action-name component-name (mapcar #'car *current-component-functions*))))
 
-            ;; Re-render with the updated state
-            (let ((final-html (render-html (run-comp))))
+            ;; Re-render with the updated state, expanding nested components
+            (let ((final-html
+                   (let ((*component-expander* #'expand-child-component))
+                     (render-html (run-comp)))))
               (list :html final-html :state *current-component-state*))))
         (error "Component ~A not found" component-name))))
 
@@ -112,4 +121,38 @@
         (let ((*current-component-state* state))
           (apply (symbol-function func-name) args))
         (error "Component ~A not found" name))))
+
+(defun normalize-state-keys (value)
+  "Recursively convert jonathan-parsed :|key| keywords to :KEY style."
+  (cond
+    ((null value) nil)
+    ((and (listp value) (keywordp (car value)))
+     (loop for (k v) on value by #'cddr
+           append (list (make-keyword (string-upcase (string k)))
+                        (normalize-state-keys v))))
+    ((listp value) (mapcar #'normalize-state-keys value))
+    (t value)))
+
+(defun expand-child-component (tag rest)
+  "Expand a child component S-expression call into an HTML string."
+  (let* ((attrs (when (and rest
+                           (listp (car rest))
+                           (symbolp (caar rest))
+                           (string= (string (caar rest)) "@"))
+                  (cdar rest)))
+         (props-plist (loop for (k v) in attrs
+                            append (list (make-keyword (string-upcase (string k))) v)))
+         (comp-info (gethash (string-downcase (string tag)) *component-registry*))
+         (comp-args (getf comp-info :args))
+         (arg-values (loop for arg in comp-args
+                           collect (getf props-plist
+                                        (make-keyword (string-upcase (string arg)))))))
+    (if comp-info
+        (render-html (apply #'render-component tag nil arg-values))
+        (error "Unknown component: ~A" tag))))
+
+(defun render-component-html (name state &rest args)
+  "Render a component to an HTML string, expanding nested component calls."
+  (let ((*component-expander* #'expand-child-component))
+    (render-html (apply #'render-component name state args))))
 

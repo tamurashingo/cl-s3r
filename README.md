@@ -27,6 +27,16 @@ make up
 
 Open `http://localhost:5001` in your browser.
 
+### Running the Todo Sample
+
+```sh
+cd sample/02-todo
+make image
+make up
+```
+
+Open `http://localhost:5002` in your browser.
+
 To stop:
 
 ```sh
@@ -34,6 +44,8 @@ make down
 ```
 
 ## Defining Components
+
+### Single Component (Stateful)
 
 A component is defined with `define-component`, declares its state with `let-component-state`, and registers client-callable actions with `let-function`:
 
@@ -47,6 +59,70 @@ A component is defined with `define-component`, declares its state with `let-com
          (:p "Count: " ,count)
          (:button (@ (onclick (increment))) "+")
          (:button (@ (onclick (decrement))) "-")))))
+```
+
+### Nested Components (Parent-Child)
+
+Child components are written as non-keyword symbols in the parent's S-expression. Props (including callbacks) are passed via `(@ ...)` attribute blocks:
+
+```lisp
+;; Stateless child — receives props only
+(define-component todo-item (id title done on-toggle on-delete)
+  `(:li
+     (:input (@ (type "checkbox")
+                ,@(when done '((checked "checked")))
+                (onclick ,on-toggle)))
+     (:span ,title)
+     (:button (@ (onclick ,on-delete)) "Delete")))
+
+;; Root component — owns all state and defines all actions
+(define-component todo ()
+  (let-component-state ((todos '()) (next-id 0))
+    (let-function
+        ((add-todo (form-data)
+           (let ((title (getf form-data :|todo-text|)))
+             (when (and title (not (string= title "")))
+               (setf todos (append todos
+                                   (list (list :id next-id :title title :done nil))))
+               (incf next-id))))
+         (toggle-done (id)
+           (setf todos (mapcar (lambda (item)
+                                 (if (= (getf item :id) id)
+                                     (list :id id :title (getf item :title)
+                                           :done (not (getf item :done)))
+                                     item))
+                               todos)))
+         (delete-todo (id)
+           (setf todos (remove-if (lambda (item) (= (getf item :id) id)) todos))))
+      `(:div
+         (:h1 "Todo App")
+         ;; Pass callback as S-expression prop
+         (todo-input (@ (on-add (add-todo))))
+         ;; Pass data and callback templates; child appends item id per row
+         (todo-list (@ (todos ,todos)
+                       (on-toggle (toggle-done))
+                       (on-delete (delete-todo))))))))
+```
+
+**Design principle:** All actions are defined in the root component. Child components are purely presentational — they receive data and callback S-expressions as props, emit them as `data-on-click` / `data-on-submit` attributes, and the client always routes actions to the root component.
+
+### Form Submission
+
+Wrap the submit event in `onsubmit`. The client collects `FormData` automatically and appends it as the last argument to the action:
+
+```lisp
+(define-component todo-input (on-add)
+  `(:form (@ (onsubmit ,on-add))
+     (:input (@ (type "text") (name "todo-text") (placeholder "New todo...")))
+     (:button (@ (type "submit")) "Add")))
+```
+
+The action handler receives form fields as a plist keyed by field name:
+
+```lisp
+(add-todo (form-data)
+  (let ((title (getf form-data :|todo-text|)))
+    ...))
 ```
 
 ### Mounting
@@ -147,6 +223,12 @@ cl-s3r/
       Dockerfile
       docker-compose.yml
       Makefile
+    02-todo/
+      app.lisp             -- Todo app (nested components, form submission)
+      index.html           -- Static HTML shell
+      Dockerfile
+      docker-compose.yml
+      Makefile
 ```
 
 ## Dependencies
@@ -164,10 +246,11 @@ cl-s3r/
 - [x] Client-server action round-trip with `innerHTML` replacement
 - [x] Mount-based initialization (`configure-mount` + static HTML)
 
-### Phase 2: Nested Components and Forms
-- [ ] Parent-child component nesting with S-expression callback props
-- [ ] Automatic `FormData` mapping to server-side action arguments
-- [ ] Full state tree collection from root component
+### Phase 2: Nested Components and Forms (current)
+- [x] Parent-child component nesting with S-expression callback props
+- [x] Automatic `FormData` mapping to server-side action arguments
+- [x] Full state tree collection from root component
+- [x] Todo sample app (`sample/02-todo`)
 
 ### Phase 3: UX Optimization
 - [ ] DOM diffing (virtual DOM or morphdom) to replace full `innerHTML` swap

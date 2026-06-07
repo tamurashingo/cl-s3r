@@ -144,22 +144,37 @@ export async function sendAction(action, rootElement) {
 }
 
 /**
- * Initialize event delegation (global click handler).
+ * Initialize event delegation (click and submit handlers).
+ * All actions route to the root component (direct child of mount container).
  */
 export function initRuntime(rootSelector = 'body') {
-  document.querySelector(rootSelector).addEventListener('click', (event) => {
+  const mountContainer = document.querySelector(rootSelector);
+
+  mountContainer.addEventListener('click', (event) => {
     const trigger = event.target.closest('[data-on-click]');
-    if (trigger) {
-      const actionStr = trigger.getAttribute('data-on-click');
-      try {
-        const action = JSON.parse(actionStr);
-        // Find the nearest component root
-        const root = trigger.closest('[data-component]') || trigger.closest('[data-state]') || document.body.firstElementChild;
-        console.log('Action triggered. Root:', root, 'Action:', action);
-        sendAction(action, root);
-      } catch (e) {
-        console.error('Failed to parse action JSON:', e);
-      }
+    if (!trigger) return;
+    try {
+      const action = JSON.parse(trigger.getAttribute('data-on-click'));
+      const root = mountContainer.firstElementChild;
+      if (root) sendAction(action, root);
+    } catch (e) {
+      console.error('Failed to parse action JSON:', e);
+    }
+  });
+
+  mountContainer.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const form = event.target.closest('[data-on-submit]');
+    if (!form) return;
+    try {
+      const action = JSON.parse(form.getAttribute('data-on-submit'));
+      const formData = Object.fromEntries(new FormData(form).entries());
+      action.push(formData);
+      const root = mountContainer.firstElementChild;
+      if (root) sendAction(action, root);
+      form.reset();
+    } catch (e) {
+      console.error('Failed to parse submit action JSON:', e);
     }
   });
 }

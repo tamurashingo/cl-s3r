@@ -1,16 +1,16 @@
 (ql:quickload :cl-s3r)
 
-(defpackage :cl-s3r.sample.counter
+(defpackage #:cl-s3r.sample.counter
   (:use :cl)
-  (:import-from :cl-s3r.server
+  (:import-from #:cl-s3r.server
                 #:configure-mount
                 #:start-server)
-  (:import-from :cl-s3r.component
+  (:import-from #:cl-s3r.component
                 #:define-component
                 #:let-component-state
                 #:let-function))
 
-(in-package :cl-s3r.sample.counter)
+(in-package #:cl-s3r.sample.counter)
 
 ;; カウンタコンポーネントの定義
 (define-component counter-app (initial-count)

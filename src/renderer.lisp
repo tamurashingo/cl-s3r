@@ -2,9 +2,12 @@
   (:use #:cl)
   (:import-from #:alexandria
                 #:starts-with-subseq)
-  (:export #:render-html))
+  (:export #:render-html
+           #:*component-expander*))
 
 (in-package #:cl-s3r.renderer)
+
+(defvar *component-expander* nil)
 
 (defun escape-html (str)
   "Perform minimal HTML escaping."
@@ -66,6 +69,11 @@
                     (string-downcase (string tag)))))
          ((and (symbolp tag) (string= (string tag) "@"))
           "") ; Ignore standalone attribute list
+         ((symbolp tag)
+          ;; Non-keyword symbol = child component call
+          (if *component-expander*
+              (funcall *component-expander* tag rest)
+              (error "No component expander registered for ~A" tag)))
          (t
           ;; Render a plain list by concatenating its elements
           (format nil "~{~A~}" (mapcar #'render-html sexp))))))

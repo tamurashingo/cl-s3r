@@ -2,12 +2,11 @@
   (:use #:cl)
   (:import-from #:alexandria
                 #:make-keyword)
-  (:import-from #:cl-s3r.renderer
-                #:render-html)
   (:import-from #:cl-s3r.component
                 #:*component-registry*
                 #:call-component-action
-                #:render-component)
+                #:render-component-html
+                #:normalize-state-keys)
   (:export #:start-server
            #:stop-server
            #:configure-mount))
@@ -49,8 +48,9 @@
          (current-state-raw (getf root-state-node :|state|))
          (action-name (car action))
          (action-args (cdr action)))
-    (let ((state-plist (loop for (k v) on current-state-raw by #'cddr
-                             append (list (make-keyword (string-upcase (string k))) v))))
+    (let ((state-plist (normalize-state-keys
+                        (loop for (k v) on current-state-raw by #'cddr
+                              append (list (make-keyword (string-upcase (string k))) v)))))
       (let ((result (call-component-action component-name action-name action-args state-plist)))
         (jonathan:to-json
          `(:|html| ,(getf result :html)
@@ -67,12 +67,12 @@
                              collect (getf props-raw
                                           (make-keyword
                                            (string-upcase (string arg-sym)))))))
-      (let ((sexp (apply #'render-component
+      (let ((html (apply #'render-component-html
                          component-name
                          nil
                          arg-values)))
         `(200 (:content-type "application/json")
-              (,(jonathan:to-json `(:|html| ,(render-html sexp)))))))))
+              (,(jonathan:to-json `(:|html| ,html))))))))
 
 (defun serve-client-js (path)
   (let* ((filename (subseq path 1))
