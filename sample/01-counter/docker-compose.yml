@@ -1,0 +1,10 @@
+services:
+  app:
+    build:
+      context: ../../
+      dockerfile: sample/01-counter/Dockerfile
+    ports:
+      - "${PORT:-5001}:${PORT:-5001}"
+    environment:
+      - PORT=${PORT:-5001}
+

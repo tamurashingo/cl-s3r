@@ -1,0 +1,115 @@
+(defpackage #:cl-s3r.component
+  (:use #:cl)
+  (:import-from :alexandria
+                #:make-keyword)
+  (:import-from #:cl-s3r.renderer
+                #:render-html)
+  (:export #:define-component
+           #:let-component-state
+           #:let-function
+           #:*component-registry*
+           #:*current-component-state*
+           #:*current-component-functions*
+           #:*sync-component-state*
+           #:call-component-action
+           #:render-component))
+
+(in-package #:cl-s3r.component)
+
+;; Component registry (keyed by component name)
+(defvar *component-registry* (make-hash-table :test 'equal))
+
+;; Execution context
+(defvar *current-component-state* nil)
+(defvar *current-component-functions* nil)
+(defvar *sync-component-state* nil)
+
+(defmacro let-function (definitions &body body)
+  "Define local functions like flet, and register them in *current-component-functions*
+   so they can be invoked by action name from the client."
+  `(flet ,definitions
+     ,@(loop for (name args . func-body) in definitions
+             collect `(push (cons (string-downcase (string ',name))
+                                  (lambda ,args ,@func-body))
+                            *current-component-functions*))
+     ,@body))
+
+(defmacro let-component-state (bindings &body body)
+  (let ((vars (mapcar #'car bindings)))
+    `(let* ,(loop for (var init-val) in bindings
+                  collect `(,var (let ((val (getf *current-component-state* (make-keyword (string ',var)))))
+                                   (if (not (eq val nil)) val ,init-val))))
+       ;; Initial state setup
+       (unless *current-component-state* (setf *current-component-state* nil))
+       ,@(loop for var in vars
+               collect `(setf (getf *current-component-state* (make-keyword (string ',var))) ,var))
+
+       (setf *sync-component-state*
+             (lambda ()
+               ,@(loop for var in vars
+                       collect `(setf (getf *current-component-state* (make-keyword (string ',var))) ,var))))
+
+       (multiple-value-prog1
+           (progn ,@body)
+         ;; Sync values back after execution
+         ,@(loop for var in vars
+                 collect `(setf (getf *current-component-state* (make-keyword (string ',var))) ,var))))))
+
+(defmacro define-component (name args &body body)
+  (let ((component-name (string-downcase (string name))))
+    `(progn
+       (defun ,name ,args
+         (let ((result (progn ,@body)))
+           (if (and (listp result) (keywordp (car result)))
+               (let ((tag (car result))
+                     (rest (cdr result))
+                     (state-json (jonathan:to-json *current-component-state*)))
+                 (if (and (listp (car rest)) (eq (caar rest) '@))
+                     `(,tag (@ (data-state ,state-json) (data-component ,(string ,component-name)) ,@(cdar rest)) ,@(cdr rest))
+                     `(,tag (@ (data-state ,state-json) (data-component ,(string ,component-name))) ,@rest)))
+               result)))
+
+       (setf (gethash ,component-name *component-registry*)
+             (list :name ',name :args ',args)))))
+
+(defun call-component-action (component-name action-name args current-state)
+  (let* ((comp-info (gethash (string-downcase (string component-name)) *component-registry*))
+         (func-name (getf comp-info :name))
+         (comp-args (getf comp-info :args)))
+    (if func-name
+        (let ((*current-component-state* current-state)
+              (*current-component-functions* nil)
+              (*sync-component-state* nil))
+
+          ;; Dry-run to populate *current-component-functions* via let-function
+          (labels ((run-comp ()
+                     (apply (symbol-function func-name) (loop for arg in comp-args collect nil))))
+
+            ;; Run component to register action functions
+            (run-comp)
+
+            ;; Find and execute the action
+            (let ((action-fn (cdr (assoc (string action-name)
+                                        *current-component-functions*
+                                        :test #'string-equal))))
+              (if action-fn
+                  (progn
+                    (apply action-fn args)
+                    (when *sync-component-state*
+                      (funcall *sync-component-state*)))
+                  (format t "Warning: Action ~A not found in component ~A (Available: ~S)~%"
+                          action-name component-name (mapcar #'car *current-component-functions*))))
+
+            ;; Re-render with the updated state
+            (let ((final-html (render-html (run-comp))))
+              (list :html final-html :state *current-component-state*))))
+        (error "Component ~A not found" component-name))))
+
+(defun render-component (name state &rest args)
+  (let* ((comp-info (gethash (string-downcase (string name)) *component-registry*))
+         (func-name (getf comp-info :name)))
+    (if func-name
+        (let ((*current-component-state* state))
+          (apply (symbol-function func-name) args))
+        (error "Component ~A not found" name))))
+
