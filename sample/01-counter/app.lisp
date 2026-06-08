@@ -26,15 +26,15 @@
 ;; マウント設定
 (configure-mount :target "#root"
                  :component "counter-app"
-                 :props '(:initial-count 0))
+                 :props '(:initial-count 0)
+                 :static-root (asdf:system-relative-pathname
+                               :cl-s3r "sample/01-counter/"))
 
 ;; カウンタアプリの実行
 (defun run ()
   (let ((port (parse-integer (or (uiop:getenv "PORT") "5000"))))
     (format t "Starting Counter Sample App on port ~A...~%" port)
-    (start-server :port port
-                  :static-root (asdf:system-relative-pathname
-                                :cl-s3r "sample/01-counter/"))
+    (start-server :port port)
     (loop (sleep 1000))))
 
 (run)

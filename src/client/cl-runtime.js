@@ -97,7 +97,7 @@ function collectChildStates(element, childrenList) {
 /**
  * Send an action and the current state tree to the server.
  */
-export async function sendAction(action, rootElement) {
+export async function sendAction(action, rootElement, { apiPrefix = '' } = {}) {
   const state = collectStates(rootElement);
   const payload = {
     action, // Already in JSON array form: ["name", ...args]
@@ -107,7 +107,7 @@ export async function sendAction(action, rootElement) {
   console.log('Sending payload:', payload);
 
   try {
-    const response = await fetch('/action', {
+    const response = await fetch(`${apiPrefix}/action`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -147,7 +147,7 @@ export async function sendAction(action, rootElement) {
  * Initialize event delegation (click and submit handlers).
  * All actions route to the root component (direct child of mount container).
  */
-export function initRuntime(rootSelector = 'body') {
+export function initRuntime(rootSelector = 'body', { apiPrefix = '' } = {}) {
   const mountContainer = document.querySelector(rootSelector);
 
   mountContainer.addEventListener('click', (event) => {
@@ -156,7 +156,7 @@ export function initRuntime(rootSelector = 'body') {
     try {
       const action = JSON.parse(trigger.getAttribute('data-on-click'));
       const root = mountContainer.firstElementChild;
-      if (root) sendAction(action, root);
+      if (root) sendAction(action, root, { apiPrefix });
     } catch (e) {
       console.error('Failed to parse action JSON:', e);
     }
@@ -171,7 +171,7 @@ export function initRuntime(rootSelector = 'body') {
       const formData = Object.fromEntries(new FormData(form).entries());
       action.push(formData);
       const root = mountContainer.firstElementChild;
-      if (root) sendAction(action, root);
+      if (root) sendAction(action, root, { apiPrefix });
       form.reset();
     } catch (e) {
       console.error('Failed to parse submit action JSON:', e);
