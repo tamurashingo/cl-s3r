@@ -7,8 +7,10 @@ export async function mount(selector, config) {
     return;
   }
 
+  const apiPrefix = config.apiPrefix || '';
+
   try {
-    const response = await fetch('/api/render', {
+    const response = await fetch(`${apiPrefix}/api/render`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -26,7 +28,7 @@ export async function mount(selector, config) {
       target.innerHTML = result.html;
     }
 
-    initRuntime(selector);
+    initRuntime(selector, { apiPrefix });
   } catch (error) {
     console.error('cl-s3r mount failed:', error);
   }

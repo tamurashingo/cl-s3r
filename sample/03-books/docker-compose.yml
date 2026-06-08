@@ -1,0 +1,9 @@
+services:
+  app:
+    build:
+      context: ../../
+      dockerfile: sample/03-books/Dockerfile
+    ports:
+      - "${PORT:-5003}:${PORT:-5003}"
+    environment:
+      - PORT=${PORT:-5003}

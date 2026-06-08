@@ -9,27 +9,78 @@
                 #:normalize-state-keys)
   (:export #:start-server
            #:stop-server
+           #:configure-route
            #:configure-mount))
 
 (in-package #:cl-s3r.server)
 
 (defvar *handler* nil)
-(defvar *mount-config* nil)
-(defvar *static-root* nil)
+(defvar *route-registry* (make-hash-table :test 'equal))
 
-(defun configure-mount (&key (target "#root") component props)
-  (setf *mount-config*
-        (list :target target
-              :component component
-              :props props)))
+(defun configure-route (&key (prefix "/") component props path-param
+                              (target "#root") static-root)
+  (setf (gethash prefix *route-registry*)
+        (list :component component
+              :props props
+              :path-param path-param
+              :target target
+              :static-root (when static-root (pathname static-root)))))
 
-(defun generate-app-js ()
-  (let* ((target (getf *mount-config* :target))
-         (component (getf *mount-config* :component))
-         (props (getf *mount-config* :props))
+(defun configure-mount (&key (target "#root") component props static-root)
+  (configure-route :prefix "/" :component component :props props
+                   :target target :static-root static-root))
+
+(defun starts-with-p (prefix path)
+  (let ((plen (length prefix)))
+    (and (>= (length path) plen)
+         (string= prefix (subseq path 0 plen))
+         (or (= (length path) plen)
+             (char= (char prefix (1- plen)) #\/)
+             (char= (char path plen) #\/)))))
+
+(defun find-route-for-path (path)
+  "Longest-prefix match. Returns (values prefix config) or (values nil nil)."
+  (let ((best-prefix nil) (best-config nil))
+    (maphash (lambda (prefix config)
+               (when (and (or (string= path prefix)
+                              (starts-with-p prefix path))
+                          (or (null best-prefix)
+                              (> (length prefix) (length best-prefix))))
+                 (setf best-prefix prefix best-config config)))
+             *route-registry*)
+    (values best-prefix best-config)))
+
+(defun extract-path-param (subpath)
+  "'/1/app.js' -> (values \"1\" \"/app.js\"), '/' -> (values nil \"/\")"
+  (if (or (string= subpath "/") (string= subpath ""))
+      (values nil "/")
+      (let* ((s (subseq subpath 1))
+             (slash-pos (position #\/ s)))
+        (if slash-pos
+            (values (subseq s 0 slash-pos) (subseq s slash-pos))
+            (values s "/")))))
+
+(defun parse-param-value (str)
+  "Convert string to integer if possible, otherwise return as string."
+  (handler-case (parse-integer str)
+    (error () str)))
+
+(defun generate-index-html (app-js-url)
+  (format nil
+          "<!DOCTYPE html>~%<html>~%<head>~%  <meta charset=\"UTF-8\">~%</head>~%<body>~%  <div id=\"root\"></div>~%  <script type=\"module\" src=\"~A\"></script>~%</body>~%</html>~%"
+          app-js-url))
+
+(defun generate-app-js (config &key (api-prefix "") path-param-key param-value)
+  (let* ((target (getf config :target))
+         (component (getf config :component))
+         (base-props (getf config :props))
+         (props (if (and path-param-key param-value)
+                    (append base-props
+                            (list path-param-key (parse-param-value param-value)))
+                    base-props))
          (props-json (if props (jonathan:to-json props) "{}")))
-    (format nil "import { mount } from '/cl-s3r.js';~%~%mount('~A', {~%  component: '~A',~%  props: ~A~%});~%"
-            target component props-json)))
+    (format nil "import { mount } from '/cl-s3r.js';~%~%mount('~A', {~%  component: '~A',~%  props: ~A,~%  apiPrefix: '~A'~%});~%"
+            target component props-json api-prefix)))
 
 (defun parse-json-body (env)
   (let ((content-length (getf env :content-length))
@@ -86,45 +137,72 @@
 (defun app (env)
   (let ((path (getf env :path-info))
         (method (getf env :request-method)))
-    (cond
-      ;; Serve static index.html
-      ((and (string= path "/") (eq method :get))
-       (if *static-root*
-           (let ((index-path (merge-pathnames "index.html" *static-root*)))
-             (if (probe-file index-path)
-                 `(200 (:content-type "text/html")
-                       (,(uiop:read-file-string index-path)))
-                 `(404 (:content-type "text/plain") ("index.html not found"))))
-           `(404 (:content-type "text/plain") ("No static root configured"))))
 
-      ;; Dynamically generated app.js
-      ((and (string= path "/app.js") (eq method :get))
-       (if *mount-config*
-           `(200 (:content-type "application/javascript")
-                 (,(generate-app-js)))
-           `(404 (:content-type "text/plain") ("No mount configuration"))))
+    ;; Shared JS files served unconditionally before route matching
+    (when (and (eq method :get)
+               (member path '("/cl-s3r.js" "/cl-component.js"
+                              "/cl-runtime.js" "/cl-mount.js")
+                       :test #'string=))
+      (return-from app (serve-client-js path)))
 
-      ;; cl-s3r client JS files
-      ((and (eq method :get)
-            (member path '("/cl-s3r.js" "/cl-component.js" "/cl-runtime.js" "/cl-mount.js")
-                    :test #'string=))
-       (serve-client-js path))
+    ;; Longest-prefix route match
+    (multiple-value-bind (prefix config)
+        (find-route-for-path path)
+      (if (null config)
+          '(404 (:content-type "text/plain") ("Not Found"))
+          (let* ((path-param-key (getf config :path-param))
+                 (raw-subpath (if (string= prefix "/")
+                                  path
+                                  (subseq path (length prefix))))
+                 (raw-subpath (if (string= raw-subpath "") "/" raw-subpath)))
+            (multiple-value-bind (param-value effective-subpath)
+                (if path-param-key
+                    (extract-path-param raw-subpath)
+                    (values nil raw-subpath))
+              (let ((api-prefix (cond
+                                  ((and path-param-key param-value)
+                                   (format nil "~A/~A" prefix param-value))
+                                  ((string= prefix "/") "")
+                                  (t prefix))))
+                (cond
+                  ;; index.html
+                  ((and (eq method :get)
+                        (or (string= effective-subpath "/")
+                            (string= effective-subpath "")))
+                   (if path-param-key
+                       (if param-value
+                           `(200 (:content-type "text/html")
+                                 (,(generate-index-html
+                                    (format nil "~A/app.js" api-prefix))))
+                           '(404 (:content-type "text/plain") ("Missing path parameter")))
+                       (let ((index-path (merge-pathnames "index.html"
+                                                          (getf config :static-root))))
+                         (if (probe-file index-path)
+                             `(200 (:content-type "text/html")
+                                   (,(uiop:read-file-string index-path)))
+                             '(404 (:content-type "text/plain") ("index.html not found"))))))
 
-      ;; API: Initial render
-      ((and (string= path "/api/render") (eq method :post))
-       (handle-render env))
+                  ;; Dynamically generated app.js
+                  ((and (eq method :get) (string= effective-subpath "/app.js"))
+                   `(200 (:content-type "application/javascript")
+                         (,(generate-app-js config
+                                            :api-prefix api-prefix
+                                            :path-param-key path-param-key
+                                            :param-value param-value))))
 
-      ;; API: Action handler
-      ((and (string= path "/action") (eq method :post))
-       (let ((payload (parse-json-body env)))
-         `(200 (:content-type "application/json")
-               (,(handle-action payload)))))
+                  ;; API: Initial render
+                  ((and (eq method :post) (string= effective-subpath "/api/render"))
+                   (handle-render env))
 
-      (t `(404 (:content-type "text/plain") ("Not Found"))))))
+                  ;; API: Action handler
+                  ((and (eq method :post) (string= effective-subpath "/action"))
+                   (let ((payload (parse-json-body env)))
+                     `(200 (:content-type "application/json")
+                           (,(handle-action payload)))))
 
-(defun start-server (&key (port 5000) (address "0.0.0.0") static-root)
-  (when static-root
-    (setf *static-root* (pathname static-root)))
+                  (t '(404 (:content-type "text/plain") ("Not Found")))))))))))
+
+(defun start-server (&key (port 5000) (address "0.0.0.0"))
   (format t "Starting server on ~A:~A...~%" address port)
   (setf *handler* (clack:clackup #'app :port port :address address)))
 

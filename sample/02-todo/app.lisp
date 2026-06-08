@@ -69,14 +69,14 @@
 
 (configure-mount :target "#root"
                  :component "todo"
-                 :props '())
+                 :props '()
+                 :static-root (asdf:system-relative-pathname
+                               :cl-s3r "sample/02-todo/"))
 
 (defun run ()
   (let ((port (parse-integer (or (uiop:getenv "PORT") "5000"))))
     (format t "Starting Todo Sample App on port ~A...~%" port)
-    (start-server :port port
-                  :static-root (asdf:system-relative-pathname
-                                :cl-s3r "sample/02-todo/"))
+    (start-server :port port)
     (loop (sleep 1000))))
 
 (run)
