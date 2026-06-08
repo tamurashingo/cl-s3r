@@ -37,7 +37,17 @@ make up
 
 Open `http://localhost:5002` in your browser.
 
-To stop:
+### Running the Implementations List/Detail Sample
+
+```sh
+cd sample/03-books
+make image
+make up
+```
+
+Open `http://localhost:5003` in your browser.
+
+To stop any sample:
 
 ```sh
 make down
@@ -96,9 +106,7 @@ Child components are written as non-keyword symbols in the parent's S-expression
            (setf todos (remove-if (lambda (item) (= (getf item :id) id)) todos))))
       `(:div
          (:h1 "Todo App")
-         ;; Pass callback as S-expression prop
          (todo-input (@ (on-add (add-todo))))
-         ;; Pass data and callback templates; child appends item id per row
          (todo-list (@ (todos ,todos)
                        (on-toggle (toggle-done))
                        (on-delete (delete-todo))))))))
@@ -125,9 +133,58 @@ The action handler receives form fields as a plist keyed by field name:
     ...))
 ```
 
-### Mounting
+## Routing and Mounting
 
-A static HTML page provides the shell:
+### Single App (`configure-mount`)
+
+For a single-page app at the root path, use `configure-mount`. Provide the static directory that contains `index.html`:
+
+```lisp
+(configure-mount :target "#root"
+                 :component "counter-app"
+                 :props '(:initial-count 0)
+                 :static-root (asdf:system-relative-pathname :cl-s3r "sample/01-counter/"))
+
+(start-server :port 5001)
+```
+
+### Multiple Apps / Path Prefixes (`configure-route`)
+
+Use `configure-route` to mount different components at different URL prefixes. Routes are matched by longest prefix:
+
+```lisp
+;; Serve the list component at /
+(configure-route :prefix "/"
+                 :component "impl-list"
+                 :props '()
+                 :static-root (asdf:system-relative-pathname :cl-s3r "sample/03-books/")
+                 :target "#root")
+
+;; Serve the detail component at /detail/:id
+(configure-route :prefix "/detail"
+                 :path-param :id
+                 :component "impl-detail"
+                 :props '()
+                 :target "#root")
+
+(start-server :port 5003)
+```
+
+#### Path Parameters
+
+When `:path-param` is specified, the URL segment immediately after the prefix (e.g. `1` in `/detail/1`) is extracted and passed to the component as a prop under that keyword. The server also generates the HTML page dynamically for path-param routes so that the embedded `app.js` URL resolves correctly.
+
+URL flow for `GET /detail/1`:
+
+```
+GET /detail/1       → dynamic index.html with <script src="/detail/1/app.js">
+GET /detail/1/app.js → mount('impl-detail', { props: {ID: 1}, apiPrefix: '/detail/1' })
+POST /detail/1/api/render → render impl-detail with id=1
+```
+
+### Static HTML Shell
+
+A static HTML file provides the shell for the root route:
 
 ```html
 <!DOCTYPE html>
@@ -143,17 +200,7 @@ A static HTML page provides the shell:
 </html>
 ```
 
-The server dynamically generates `app.js` based on the mount configuration:
-
-```lisp
-(configure-mount :target "#root"
-                 :component "counter-app"
-                 :props '(:initial-count 0))
-
-(start-server :port 5001
-              :static-root (asdf:system-relative-pathname
-                            :cl-s3r "sample/01-counter/"))
-```
+For path-param routes the shell is generated dynamically by the server.
 
 ## Architecture
 
@@ -165,7 +212,7 @@ Browser                          Server (Common Lisp)
   |<-------------------------------|
   |                                |
   |  GET /app.js                   |
-  |------------------------------->|  Generate mount script
+  |------------------------------->|  Generate mount script (with apiPrefix)
   |<-------------------------------|
   |                                |
   |  POST /api/render              |
@@ -184,6 +231,8 @@ Browser                          Server (Common Lisp)
   |  Replace DOM                   |
 ```
 
+All API endpoints are relative to the route's `apiPrefix`. For a root route the prefix is empty; for `/detail/1` the prefix is `/detail/1`, so the endpoints become `/detail/1/api/render` and `/detail/1/action`.
+
 ### Key Macros
 
 | Macro | Purpose |
@@ -192,15 +241,24 @@ Browser                          Server (Common Lisp)
 | `let-component-state` | Declare state variables serialized to the client |
 | `let-function` | Register action functions callable from the client |
 
-### Server Endpoints
+### Server API
+
+| Function | Purpose |
+|---|---|
+| `configure-mount` | Mount a single app at `/` with a static root directory |
+| `configure-route` | Mount a component at an arbitrary prefix; supports `:path-param` |
+| `start-server` | Start the HTTP server on a given port |
+| `stop-server` | Stop the running server |
+
+### Server Endpoints (per route prefix)
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/` | GET | Serve static `index.html` |
-| `/app.js` | GET | Dynamically generated mount entry point |
-| `/api/render` | POST | Initial component render |
-| `/action` | POST | Execute action and return updated HTML |
-| `/cl-s3r.js` | GET | Client runtime module |
+| `<prefix>/` | GET | Serve `index.html` (static file or dynamically generated) |
+| `<prefix>/app.js` | GET | Dynamically generated mount entry point |
+| `<prefix>/api/render` | POST | Initial component render |
+| `<prefix>/action` | POST | Execute action and return updated HTML |
+| `/cl-s3r.js` | GET | Client runtime module (shared, prefix-independent) |
 
 ## Project Structure
 
@@ -210,24 +268,30 @@ cl-s3r/
   src/
     renderer.lisp          -- S-expression to HTML converter
     component.lisp         -- Component macros and action dispatch
-    server.lisp            -- HTTP server and routing
+    server.lisp            -- HTTP server, prefix routing, path-param support
     client/
       cl-s3r.js            -- Client entry module (barrel)
-      cl-mount.js          -- mount() function
+      cl-mount.js          -- mount() with apiPrefix support
       cl-runtime.js        -- State collection and server communication
       cl-component.js      -- Custom Element base class
   sample/
     01-counter/
-      app.lisp             -- Counter component definition and server setup
+      app.lisp             -- Counter component and server setup
       index.html           -- Static HTML shell
       Dockerfile
-      docker-compose.yml
+      docker-compose.yml   -- Port 5001
       Makefile
     02-todo/
       app.lisp             -- Todo app (nested components, form submission)
       index.html           -- Static HTML shell
       Dockerfile
-      docker-compose.yml
+      docker-compose.yml   -- Port 5002
+      Makefile
+    03-books/
+      app.lisp             -- List/detail pattern with path parameters
+      index.html           -- Static HTML shell (list page)
+      Dockerfile
+      docker-compose.yml   -- Port 5003
       Makefile
 ```
 
@@ -240,19 +304,26 @@ cl-s3r/
 
 ## Roadmap
 
-### Phase 1: MVP (current)
+### Phase 1: MVP
 - [x] Single counter component with working state management
 - [x] S-expression to HTML renderer
 - [x] Client-server action round-trip with `innerHTML` replacement
 - [x] Mount-based initialization (`configure-mount` + static HTML)
 
-### Phase 2: Nested Components and Forms (current)
+### Phase 2: Nested Components and Forms
 - [x] Parent-child component nesting with S-expression callback props
 - [x] Automatic `FormData` mapping to server-side action arguments
 - [x] Full state tree collection from root component
 - [x] Todo sample app (`sample/02-todo`)
 
-### Phase 3: UX Optimization
+### Phase 3: Prefix-Based Routing
+- [x] `configure-route` for URL-prefix-to-component mapping
+- [x] Longest-prefix match routing in the server
+- [x] `apiPrefix` propagation through `app.js` to client fetch calls
+- [x] Dynamic path parameters (`:path-param`) with auto-generated HTML and props injection
+- [x] List/detail sample app (`sample/03-books`)
+
+### Phase 4: UX Optimization
 - [ ] DOM diffing (virtual DOM or morphdom) to replace full `innerHTML` swap
 - [ ] State encryption and HMAC signing for tamper protection
 
