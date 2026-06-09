@@ -8,7 +8,8 @@
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:let-component-state
-                #:let-function))
+                #:let-function)
+  (:export #:run))
 
 (in-package #:cl-s3r.sample.books)
 
@@ -109,5 +110,3 @@
     (format t "Starting CL Implementations Sample on port ~A...~%" port)
     (start-server :port port)
     (loop (sleep 1000))))
-
-(run)

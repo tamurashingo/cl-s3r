@@ -1,6 +1,6 @@
 PORT ?= 5002
 
-.PHONY: image up down
+.PHONY: image up down test
 
 image:
 	docker compose build
@@ -11,3 +11,8 @@ up:
 
 down:
 	docker compose down
+
+test:
+	docker compose run --rm --no-deps \
+	    -v $(CURDIR)/../..:/app \
+	    --entrypoint rove app /app/sample/02-todo/02-todo.asd

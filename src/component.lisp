@@ -31,6 +31,8 @@
   "Define local functions like flet, and register them in *current-component-functions*
    so they can be invoked by action name from the client."
   `(flet ,definitions
+     (declare (ignorable ,@(loop for (name . nil) in definitions
+                                 collect `#',name)))
      ,@(loop for (name args . func-body) in definitions
              collect `(push (cons (string-downcase (string ',name))
                                   (lambda ,args ,@func-body))

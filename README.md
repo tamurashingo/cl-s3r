@@ -53,6 +53,18 @@ To stop any sample:
 make down
 ```
 
+### Running Sample Tests
+
+Each sample has a `make test` target. It uses the pre-built Docker image but mounts the current source tree, so tests always run against the latest code without rebuilding the image.
+
+```sh
+cd sample/01-counter && make test
+cd sample/02-todo    && make test
+cd sample/03-books   && make test
+```
+
+`make image` must have been run at least once before running tests.
+
 ## Defining Components
 
 ### Single Component (Stateful)
@@ -182,6 +194,34 @@ GET /detail/1/app.js → mount('impl-detail', { props: {ID: 1}, apiPrefix: '/det
 POST /detail/1/api/render → render impl-detail with id=1
 ```
 
+#### Query Parameters
+
+Query string parameters are automatically parsed and merged into the component props passed via `app.js`. Each parameter name is converted to an uppercase keyword (e.g. `?filter=foo` becomes `:FILTER "foo"`).
+
+```lisp
+;; Component receives :filter as a prop
+(define-component impl-list (filter)
+  ...)
+
+;; Route needs no special configuration — query params are picked up automatically
+(configure-route :prefix "/"
+                 :component "impl-list"
+                 :props '()
+                 :static-root ...)
+```
+
+Visiting `/?filter=MIT` causes the server to serve `app.js` with `props: { FILTER: "MIT" }`, which is then passed to the initial render call.
+
+#### Name Conflicts Between Path and Query Parameters
+
+When a path parameter and a query parameter share the same name, **the path parameter takes priority**. Props are merged in order — `configure-route :props` first, then the path parameter, then query parameters — and `getf` returns the first match:
+
+```
+/detail/1?id=99  →  props: { ID: 1 }   ; path-param wins, query-param is ignored
+```
+
+This means query parameters cannot override a value already supplied by the URL path.
+
 ### Static HTML Shell
 
 A static HTML file provides the shell for the root route:
@@ -201,6 +241,58 @@ A static HTML file provides the shell for the root route:
 ```
 
 For path-param routes the shell is generated dynamically by the server.
+
+## Testing Components
+
+`cl-s3r` provides a `cl-s3r.testing` package for unit-testing components without an HTTP server. It follows the library's stateless philosophy: state is passed explicitly between calls.
+
+### API
+
+```lisp
+;; Render a component. Returns a plist with :SEXP, :RAW-SEXP, and :STATE.
+(test-render-component component-name &key args initial-state)
+
+;; Execute an action against a state. Returns the same plist shape.
+(test-call-action component-name action-name &key state args action-args)
+
+;; Extract a key from a state plist (case-insensitive). Returns the full plist when KEY is omitted.
+(test-get-state state &optional key)
+```
+
+Return value shape:
+
+| Key | Content |
+|---|---|
+| `:SEXP` | Rendered S-expression with `data-state` / `data-component` stripped — use this for structural assertions |
+| `:RAW-SEXP` | Rendered S-expression as-is — use this to verify serialized state JSON |
+| `:STATE` | Component state as a plist, e.g. `(:COUNT 5)` |
+
+### Usage Example
+
+```lisp
+(ql:quickload :cl-s3r)
+(load "sample/01-counter/app.lisp")
+
+(let* ((r1 (cl-s3r.testing:test-render-component "counter-app" :args '(0)))
+       (r2 (cl-s3r.testing:test-call-action "counter-app" "increment"
+                                            :state (getf r1 :state)
+                                            :args  '(0))))
+  (cl-s3r.testing:test-get-state (getf r2 :state) :count))
+;; => 1
+```
+
+### Notes on `let-function` and Unused Parameters
+
+When an action parameter is unused, declare it ignored inside the function body:
+
+```lisp
+(let-function ((on-click (event)
+                 (declare (ignore event))
+                 (incf count)))
+  ...)
+```
+
+The `let-function` macro automatically suppresses the "unused flet function" note that SBCL emits for action functions not called by name within the component body.
 
 ## Architecture
 
@@ -268,6 +360,7 @@ cl-s3r/
   src/
     renderer.lisp          -- S-expression to HTML converter
     component.lisp         -- Component macros and action dispatch
+    testing.lisp           -- Test utilities (cl-s3r.testing package)
     server.lisp            -- HTTP server, prefix routing, path-param support
     client/
       cl-s3r.js            -- Client entry module (barrel)
@@ -277,18 +370,24 @@ cl-s3r/
   sample/
     01-counter/
       app.lisp             -- Counter component and server setup
+      test.lisp            -- Rove tests
+      01-counter.asd       -- ASDF system definition with test-op
       index.html           -- Static HTML shell
       Dockerfile
       docker-compose.yml   -- Port 5001
-      Makefile
+      Makefile             -- make test runs tests via Docker volume mount
     02-todo/
       app.lisp             -- Todo app (nested components, form submission)
+      test.lisp            -- Rove tests
+      02-todo.asd          -- ASDF system definition with test-op
       index.html           -- Static HTML shell
       Dockerfile
       docker-compose.yml   -- Port 5002
       Makefile
     03-books/
       app.lisp             -- List/detail pattern with path parameters
+      test.lisp            -- Rove tests
+      03-books.asd         -- ASDF system definition with test-op
       index.html           -- Static HTML shell (list page)
       Dockerfile
       docker-compose.yml   -- Port 5003
