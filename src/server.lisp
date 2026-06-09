@@ -65,19 +65,34 @@
   (handler-case (parse-integer str)
     (error () str)))
 
+(defun split-string-by-char (str char)
+  (loop for start = 0 then (1+ pos)
+        for pos = (position char str :start start)
+        collect (subseq str start pos)
+        while pos))
+
+(defun parse-query-string (query-string)
+  "Parse 'a=1&b=2' into a plist with uppercase keyword keys."
+  (when (and query-string (not (string= query-string "")))
+    (loop for pair in (split-string-by-char query-string #\&)
+          for eq-pos = (position #\= pair)
+          when eq-pos
+          nconc (list (make-keyword (string-upcase (subseq pair 0 eq-pos)))
+                      (subseq pair (1+ eq-pos))))))
+
 (defun generate-index-html (app-js-url)
   (format nil
           "<!DOCTYPE html>~%<html>~%<head>~%  <meta charset=\"UTF-8\">~%</head>~%<body>~%  <div id=\"root\"></div>~%  <script type=\"module\" src=\"~A\"></script>~%</body>~%</html>~%"
           app-js-url))
 
-(defun generate-app-js (config &key (api-prefix "") path-param-key param-value)
+(defun generate-app-js (config &key (api-prefix "") path-param-key param-value query-params)
   (let* ((target (getf config :target))
          (component (getf config :component))
          (base-props (getf config :props))
-         (props (if (and path-param-key param-value)
-                    (append base-props
-                            (list path-param-key (parse-param-value param-value)))
-                    base-props))
+         (props (append base-props
+                        (when (and path-param-key param-value)
+                          (list path-param-key (parse-param-value param-value)))
+                        query-params))
          (props-json (if props (jonathan:to-json props) "{}")))
     (format nil "import { mount } from '/cl-s3r.js';~%~%mount('~A', {~%  component: '~A',~%  props: ~A,~%  apiPrefix: '~A'~%});~%"
             target component props-json api-prefix)))
@@ -169,26 +184,35 @@
                   ((and (eq method :get)
                         (or (string= effective-subpath "/")
                             (string= effective-subpath "")))
-                   (if path-param-key
-                       (if param-value
-                           `(200 (:content-type "text/html")
-                                 (,(generate-index-html
-                                    (format nil "~A/app.js" api-prefix))))
-                           '(404 (:content-type "text/plain") ("Missing path parameter")))
-                       (let ((index-path (merge-pathnames "index.html"
-                                                          (getf config :static-root))))
-                         (if (probe-file index-path)
+                   (let* ((qs (getf env :query-string))
+                          (has-qs (and qs (not (string= qs ""))))
+                          (app-js-url (if has-qs
+                                          (format nil "~A/app.js?~A" api-prefix qs)
+                                          (format nil "~A/app.js" api-prefix))))
+                     (if path-param-key
+                         (if param-value
                              `(200 (:content-type "text/html")
-                                   (,(uiop:read-file-string index-path)))
-                             '(404 (:content-type "text/plain") ("index.html not found"))))))
+                                   (,(generate-index-html app-js-url)))
+                             '(404 (:content-type "text/plain") ("Missing path parameter")))
+                         (if has-qs
+                             `(200 (:content-type "text/html")
+                                   (,(generate-index-html app-js-url)))
+                             (let ((index-path (merge-pathnames "index.html"
+                                                                (getf config :static-root))))
+                               (if (probe-file index-path)
+                                   `(200 (:content-type "text/html")
+                                         (,(uiop:read-file-string index-path)))
+                                   '(404 (:content-type "text/plain") ("index.html not found"))))))))
 
                   ;; Dynamically generated app.js
                   ((and (eq method :get) (string= effective-subpath "/app.js"))
-                   `(200 (:content-type "application/javascript")
-                         (,(generate-app-js config
-                                            :api-prefix api-prefix
-                                            :path-param-key path-param-key
-                                            :param-value param-value))))
+                   (let ((query-params (parse-query-string (getf env :query-string))))
+                     `(200 (:content-type "application/javascript")
+                           (,(generate-app-js config
+                                              :api-prefix api-prefix
+                                              :path-param-key path-param-key
+                                              :param-value param-value
+                                              :query-params query-params)))))
 
                   ;; API: Initial render
                   ((and (eq method :post) (string= effective-subpath "/api/render"))

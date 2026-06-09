@@ -163,9 +163,9 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '' } = {}) {
   });
 
   mountContainer.addEventListener('submit', (event) => {
-    event.preventDefault();
     const form = event.target.closest('[data-on-submit]');
     if (!form) return;
+    event.preventDefault();
     try {
       const action = JSON.parse(form.getAttribute('data-on-submit'));
       const formData = Object.fromEntries(new FormData(form).entries());

@@ -46,16 +46,37 @@
      :license "GNU LGPL v2"
      :repo "https://www.gnu.org/software/gcl/")))
 
-(define-component impl-list ()
-  `(:div
-     (:h1 "Common Lisp OSS Implementations")
-     (:ul
-       ,@(loop for impl in *implementations*
-               collect `(:li
-                          (:a (@ (href ,(format nil "/detail/~A" (getf impl :id))))
-                              ,(getf impl :name))
-                          " — "
-                          ,(getf impl :description))))))
+(define-component impl-list (filter)
+  (let* ((effective-filter (when (and filter (not (string= filter ""))) filter))
+         (items (if effective-filter
+                    (remove-if-not
+                     (lambda (impl)
+                       (flet ((contains (text)
+                                (search (string-downcase effective-filter)
+                                        (string-downcase text))))
+                         (or (contains (getf impl :name))
+                             (contains (getf impl :description))
+                             (contains (getf impl :license)))))
+                     *implementations*)
+                    *implementations*)))
+    `(:div
+       (:h1 "Common Lisp OSS Implementations")
+       (:form (@ (action "/") (method "get"))
+         (:input (@ (type "text")
+                    (name "filter")
+                    (placeholder "Search implementations...")
+                    ,@(when effective-filter `((value ,effective-filter)))))
+         (:button (@ (type "submit")) "Search"))
+       ,@(when effective-filter
+           `((:p (:em ,(format nil "Filtered by: ~A (~A result~:P)"
+                               effective-filter (length items))))))
+       (:ul
+         ,@(loop for impl in items
+                 collect `(:li
+                            (:a (@ (href ,(format nil "/detail/~A" (getf impl :id))))
+                                ,(getf impl :name))
+                            " — "
+                            ,(getf impl :description)))))))
 
 (define-component impl-detail (id)
   (let ((impl (find id *implementations* :key (lambda (x) (getf x :id)) :test #'=)))
