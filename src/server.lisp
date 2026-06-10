@@ -6,7 +6,8 @@
                 #:*component-registry*
                 #:call-component-action
                 #:render-component-html
-                #:normalize-state-keys)
+                #:normalize-state-keys
+                #:call-metadata)
   (:export #:start-server
            #:stop-server
            #:configure-route
@@ -85,12 +86,41 @@
           nconc (list (make-keyword (string-upcase (subseq pair 0 eq-pos)))
                       (subseq pair (1+ eq-pos))))))
 
+(defun escape-html-string (str)
+  (with-output-to-string (out)
+    (loop for c across str do
+      (case c
+        (#\< (write-string "&lt;" out))
+        (#\> (write-string "&gt;" out))
+        (#\& (write-string "&amp;" out))
+        (#\" (write-string "&quot;" out))
+        (t (write-char c out))))))
+
+(defun inject-title (html title)
+  "HTML 文字列中の <title> を TITLE で置換。なければ </head> 前に挿入する。"
+  (let* ((safe-title (escape-html-string title))
+         (new-tag (format nil "<title>~A</title>" safe-title))
+         (existing-open (search "<title>" html))
+         (existing-close (search "</title>" html)))
+    (if (and existing-open existing-close)
+        (concatenate 'string
+                     (subseq html 0 existing-open)
+                     new-tag
+                     (subseq html (+ existing-close (length "</title>"))))
+        (let ((head-close (search "</head>" html)))
+          (if head-close
+              (concatenate 'string
+                           (subseq html 0 head-close)
+                           new-tag
+                           (subseq html head-close))
+              html)))))
+
 (defun generate-index-html (app-js-url)
   (format nil
           "<!DOCTYPE html>~%<html>~%<head>~%  <meta charset=\"UTF-8\">~%</head>~%<body>~%  <div id=\"root\"></div>~%  <script type=\"module\" src=\"~A\"></script>~%</body>~%</html>~%"
           app-js-url))
 
-(defun render-root-html (app-js-url)
+(defun render-root-html (app-js-url &key metadata)
   (if *root-component*
       (let* ((children '(:div (@ (id "root"))))
              (rendered (render-component-html *root-component* nil children))
@@ -101,8 +131,12 @@
                                            (subseq rendered 0 body-close-pos)
                                            script-tag
                                            (subseq rendered body-close-pos))
-                              (concatenate 'string rendered script-tag))))
-        (concatenate 'string "<!DOCTYPE html>" (string #\newline) with-script))
+                              (concatenate 'string rendered script-tag)))
+             (with-meta (let ((title (and metadata (getf metadata :title))))
+                          (if title
+                              (inject-title with-script title)
+                              with-script))))
+        (concatenate 'string "<!DOCTYPE html>" (string #\newline) with-meta))
       (generate-index-html app-js-url)))
 
 (defun generate-app-js (config &key (api-prefix "") path-param-key param-value query-params)
@@ -210,9 +244,15 @@
                               (has-qs (and qs (not (string= qs ""))))
                               (app-js-url (if has-qs
                                               (format nil "~A/app.js?~A" api-prefix qs)
-                                              (format nil "~A/app.js" api-prefix))))
+                                              (format nil "~A/app.js" api-prefix)))
+                              (meta-props (append (getf config :props)
+                                                  (when (and path-param-key param-value)
+                                                    (list path-param-key
+                                                          (parse-param-value param-value)))
+                                                  (parse-query-string qs)))
+                              (metadata (call-metadata (getf config :component) meta-props)))
                          `(200 (:content-type "text/html")
-                               (,(render-root-html app-js-url))))))
+                               (,(render-root-html app-js-url :metadata metadata))))))
 
                   ;; Dynamically generated app.js
                   ((and (eq method :get) (string= effective-subpath "/app.js"))

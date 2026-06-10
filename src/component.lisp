@@ -9,18 +9,39 @@
            #:let-component-state
            #:let-function
            #:*component-registry*
+           #:*metadata-registry*
            #:*current-component-state*
            #:*current-component-functions*
            #:*sync-component-state*
            #:call-component-action
            #:render-component
            #:render-component-html
-           #:normalize-state-keys))
+           #:normalize-state-keys
+           #:define-metadata
+           #:call-metadata))
 
 (in-package #:cl-s3r.component)
 
 ;; Component registry (keyed by component name)
 (defvar *component-registry* (make-hash-table :test 'equal))
+
+;; Metadata registry (keyed by component name)
+(defvar *metadata-registry* (make-hash-table :test 'equal))
+
+(defmacro define-metadata (name args &body body)
+  "Register a metadata-generating function for a component.
+ARGS matches the component's props. BODY returns a plist like (:title \"...\") or nil."
+  (let ((component-name (string-downcase (string name))))
+    `(setf (gethash ,component-name *metadata-registry*)
+           (lambda (&key ,@args &allow-other-keys)
+             ,@body))))
+
+(defun call-metadata (component-name props)
+  "Call the metadata function for COMPONENT-NAME with PROPS (a plist).
+Returns a plist like (:title \"...\") or nil if no metadata is registered."
+  (let ((fn (gethash (string-downcase (string component-name)) *metadata-registry*)))
+    (when fn
+      (apply fn props))))
 
 ;; Execution context
 (defvar *current-component-state* nil)

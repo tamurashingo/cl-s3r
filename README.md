@@ -270,6 +270,65 @@ When a path parameter and a query parameter share the same name, **the path para
 /detail/1?id=99  →  props: { ID: 1 }   ; path-param wins, query-param is ignored
 ```
 
+## Page Metadata
+
+Use `define-metadata` to generate page-level metadata (such as `<title>`) dynamically from route parameters. This is analogous to Next.js's `generateMetadata`.
+
+### How It Works
+
+`define-metadata` is registered under the same component name used in `configure-route`. When the server handles an initial `GET` request, it looks up the metadata function by the route's `:component` name, calls it with the resolved props (path parameters and query parameters), and uses the result to update the `<title>` tag in the HTML document before sending the response.
+
+Only the component named in `configure-route :component` is looked up. Metadata functions defined for child components rendered inside the page component are never called.
+
+### Syntax
+
+```lisp
+(define-metadata component-name (prop1 prop2 ...)
+  ;; Returns a plist such as (:title "..."), or NIL to leave the layout title unchanged.
+  ...)
+```
+
+The argument list must match the props that the route component receives (path parameter + query parameters). Extra props passed by the framework are silently ignored.
+
+### Example
+
+```lisp
+;; Route: GET /detail/:id → component "impl-detail"
+(configure-route :path "/detail"
+                 :path-param :id
+                 :component "impl-detail"
+                 :props '())
+
+;; Metadata for "impl-detail" — same component name as configure-route
+(define-metadata impl-detail (id)
+  (let ((impl (find id *implementations*
+                    :key (lambda (x) (getf x :id))
+                    :test #'=)))
+    (when impl
+      (list :title (format nil "~A - My Site" (getf impl :name))))))
+```
+
+When visiting `/detail/1`, the server calls `(impl-detail :id 1)` and the response HTML contains:
+
+```html
+<title>SBCL - My Site</title>
+```
+
+When visiting `/` (no `define-metadata` for `impl-list`), the root layout's original `<title>` is left unchanged.
+
+### Supported Metadata Fields
+
+| Key | Effect |
+|---|---|
+| `:title` | Replaces (or inserts) the `<title>` tag in `<head>` |
+
+### Import
+
+```lisp
+(:import-from #:cl-s3r.component
+              #:define-metadata)
+```
+
 ## Testing Components
 
 `cl-s3r` provides a `cl-s3r.testing` package for unit-testing components without an HTTP server. It follows the library's stateless philosophy: state is passed explicitly between calls.
@@ -359,6 +418,7 @@ All API endpoints are relative to the route's `apiPrefix`. For a root route the 
 | `define-component` | Define a named component with props |
 | `let-component-state` | Declare state variables serialized to the client |
 | `let-function` | Register action functions callable from the client |
+| `define-metadata` | Register a metadata function for a route component (e.g. page title) |
 
 ### Server API
 
@@ -512,7 +572,11 @@ cl-s3r/
 - [x] Server renders full HTML document from Lisp S-expressions on every initial request
 - [x] `<script>` tag injected automatically; no static files required
 
-### Phase 6: UX Optimization
+### Phase 6: Page Metadata
+- [x] `define-metadata` — generate page-level metadata (title etc.) from route props
+- [x] Server injects metadata into the HTML document on initial render
+
+### Phase 7: UX Optimization
 - [ ] DOM diffing (virtual DOM or morphdom) to replace full `innerHTML` swap
 - [ ] State encryption and HMAC signing for tamper protection
 

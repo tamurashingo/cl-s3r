@@ -6,7 +6,8 @@
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:let-component-state
-                #:let-function))
+                #:let-function
+                #:define-metadata))
 
 (in-package #:cl-s3r.sample.books)
 
@@ -99,6 +100,14 @@
         `(:div
            (:h1 "Implementation not found")
            (:p (:a (@ (href "/")) "← Back to list"))))))
+
+(define-metadata impl-detail (id)
+  (let ((impl (find id *implementations*
+                    :key (lambda (x) (getf x :id))
+                    :test #'=)))
+    (when impl
+      (list :title (format nil "~A - Common Lisp OSS Implementations"
+                           (getf impl :name))))))
 
 (configure-route :path "/"
                  :component "impl-list"
