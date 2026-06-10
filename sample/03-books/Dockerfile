@@ -16,4 +16,4 @@ RUN ros run --eval '(ql:quickload :cl-s3r)' --eval '(quit)'
 RUN ros install /app/ros/s3rup.ros
 
 ENTRYPOINT []
-CMD ["s3rup", "/app/sample/03-books/cl-s3r-sample-books.asd"]
+CMD ["s3rup", "/app/sample/03-books/03-books.asd"]
