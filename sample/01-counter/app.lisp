@@ -1,13 +1,24 @@
 (defpackage #:cl-s3r.sample.counter
   (:use :cl)
   (:import-from #:cl-s3r.server
-                #:configure-mount)
+                #:configure-route
+                #:configure-root-page)
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:let-component-state
                 #:let-function))
 
 (in-package #:cl-s3r.sample.counter)
+
+(define-component root (children)
+  `(:html (@ (lang "ja"))
+     (:head
+       (:meta (@ (charset "UTF-8")))
+       (:title "cl-s3r Counter"))
+     (:body
+       ,children)))
+
+(configure-root-page :component "root")
 
 ;; カウンタコンポーネントの定義
 (define-component counter-app (initial-count)
@@ -21,8 +32,6 @@
          (:button (@ (onclick (decrement))) "-")))))
 
 ;; マウント設定
-(configure-mount :target "#root"
+(configure-route :path "/"
                  :component "counter-app"
-                 :props '(:initial-count 0)
-                 :static-root (asdf:system-relative-pathname
-                               :cl-s3r-sample-counter ""))
+                 :props '(:initial-count 0))

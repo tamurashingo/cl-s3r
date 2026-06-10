@@ -1,13 +1,24 @@
 (defpackage #:cl-s3r.sample.books
   (:use #:cl)
   (:import-from #:cl-s3r.server
-                #:configure-route)
+                #:configure-route
+                #:configure-root-page)
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:let-component-state
                 #:let-function))
 
 (in-package #:cl-s3r.sample.books)
+
+(define-component root (children)
+  `(:html (@ (lang "ja"))
+     (:head
+       (:meta (@ (charset "UTF-8")))
+       (:title "Common Lisp OSS Implementations"))
+     (:body
+       ,children)))
+
+(configure-root-page :component "root")
 
 (defparameter *implementations*
   '((:id 1 :name "SBCL"
@@ -89,14 +100,11 @@
            (:h1 "Implementation not found")
            (:p (:a (@ (href "/")) "← Back to list"))))))
 
-(configure-route :prefix "/"
+(configure-route :path "/"
                  :component "impl-list"
-                 :props '()
-                 :static-root (asdf:system-relative-pathname :cl-s3r-sample-books "")
-                 :target "#root")
+                 :props '())
 
-(configure-route :prefix "/detail"
+(configure-route :path "/detail"
                  :path-param :id
                  :component "impl-detail"
-                 :props '()
-                 :target "#root")
+                 :props '())

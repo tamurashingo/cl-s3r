@@ -49,25 +49,7 @@ Create `counter.asd`:
   :components ((:file "app")))
 ```
 
-### 2. HTML Shell
-
-Create `index.html`:
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Counter</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module" src="/app.js"></script>
-</body>
-</html>
-```
-
-### 3. Component and Route
+### 2. Component and Route
 
 Create `app.lisp`:
 
@@ -75,13 +57,24 @@ Create `app.lisp`:
 (defpackage :counter
   (:use :cl)
   (:import-from :cl-s3r.server
-                :configure-mount)
+                :configure-root-page
+                :configure-route)
   (:import-from :cl-s3r.component
                 :define-component
                 :let-component-state
                 :let-function))
 
 (in-package :counter)
+
+(define-component root (children)
+  `(:html (@ (lang "en"))
+     (:head
+       (:meta (@ (charset "UTF-8")))
+       (:title "Counter"))
+     (:body
+       ,children)))
+
+(configure-root-page :component "root")
 
 (define-component counter-app (initial-count)
   (let-component-state ((count initial-count))
@@ -93,13 +86,12 @@ Create `app.lisp`:
          (:button (@ (onclick (increment))) "+")
          (:button (@ (onclick (decrement))) "-")))))
 
-(configure-mount :target "#root"
+(configure-route :path "/"
                  :component "counter-app"
-                 :props '(:initial-count 0)
-                 :static-root (asdf:system-relative-pathname :counter ""))
+                 :props '(:initial-count 0))
 ```
 
-### 4. Run
+### 3. Run
 
 ```sh
 s3rup ./counter.asd
@@ -199,46 +191,57 @@ The action handler receives form fields as a plist keyed by field name:
 
 ## Routing and Mounting
 
-### Single App (`configure-mount`)
+### Root Layout (`configure-root-page`)
 
-For a single-page app at the root path, use `configure-mount`. Provide the static directory that contains `index.html`:
+Use `configure-root-page` to define the layout component that wraps every page. The server renders this component to produce the initial full HTML document. The framework automatically injects a `<div id="root">` (as the `children` argument) and the `<script type="module" src="/app.js">` tag into the rendered HTML.
 
 ```lisp
-(configure-mount :target "#root"
-                 :component "counter-app"
-                 :props '(:initial-count 0)
-                 :static-root (asdf:system-relative-pathname :my-app ""))
+(define-component root (children)
+  `(:html (@ (lang "ja"))
+     (:head
+       (:meta (@ (charset "UTF-8")))
+       (:title "My App"))
+     (:body
+       ,children)))
+
+(configure-root-page :component "root")
 ```
 
-### Multiple Apps / Path Prefixes (`configure-route`)
-
-Use `configure-route` to mount different components at different URL prefixes. Routes are matched by longest prefix:
+`children` can be placed anywhere in the layout body:
 
 ```lisp
-;; Serve the list component at /
-(configure-route :prefix "/"
-                 :component "impl-list"
-                 :props '()
-                 :static-root (asdf:system-relative-pathname :my-app "")
-                 :target "#root")
+(define-component root (children)
+  `(:html
+     (:body
+       (:header "My App")
+       ,children
+       (:footer "© 2026"))))
+```
 
-;; Serve the detail component at /detail/:id
-(configure-route :prefix "/detail"
+### Routes (`configure-route`)
+
+Use `configure-route` to map URL paths to page components. Routes are matched by longest prefix:
+
+```lisp
+(configure-route :path "/"
+                 :component "impl-list"
+                 :props '())
+
+(configure-route :path "/detail"
                  :path-param :id
                  :component "impl-detail"
-                 :props '()
-                 :target "#root")
+                 :props '())
 ```
 
 #### Path Parameters
 
-When `:path-param` is specified, the URL segment immediately after the prefix (e.g. `1` in `/detail/1`) is extracted and passed to the component as a prop under that keyword. The server also generates the HTML page dynamically for path-param routes so that the embedded `app.js` URL resolves correctly.
+When `:path-param` is specified, the URL segment immediately after the path (e.g. `1` in `/detail/1`) is extracted and passed to the component as a prop under that keyword.
 
 URL flow for `GET /detail/1`:
 
 ```
-GET /detail/1       → dynamic index.html with <script src="/detail/1/app.js">
-GET /detail/1/app.js → mount('impl-detail', { props: {ID: 1}, apiPrefix: '/detail/1' })
+GET /detail/1            → server renders root component; script src="/detail/1/app.js"
+GET /detail/1/app.js     → mount('impl-detail', { props: {ID: 1}, apiPrefix: '/detail/1' })
 POST /detail/1/api/render → render impl-detail with id=1
 ```
 
@@ -252,10 +255,9 @@ Query string parameters are automatically parsed and merged into the component p
   ...)
 
 ;; Route needs no special configuration — query params are picked up automatically
-(configure-route :prefix "/"
+(configure-route :path "/"
                  :component "impl-list"
-                 :props '()
-                 :static-root ...)
+                 :props '())
 ```
 
 Visiting `/?filter=MIT` causes the server to serve `app.js` with `props: { FILTER: "MIT" }`, which is then passed to the initial render call.
@@ -267,28 +269,6 @@ When a path parameter and a query parameter share the same name, **the path para
 ```
 /detail/1?id=99  →  props: { ID: 1 }   ; path-param wins, query-param is ignored
 ```
-
-This means query parameters cannot override a value already supplied by the URL path.
-
-### Static HTML Shell
-
-A static HTML file provides the shell for the root route:
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>My App</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module" src="/app.js"></script>
-</body>
-</html>
-```
-
-For path-param routes the shell is generated dynamically by the server.
 
 ## Testing Components
 
@@ -347,8 +327,8 @@ The `let-function` macro automatically suppresses the "unused flet function" not
 Browser                          Server (Common Lisp)
   |                                |
   |  GET /                         |
-  |------------------------------->|  Serve static index.html
-  |<-------------------------------|
+  |------------------------------->|  Render root component to HTML
+  |<-------------------------------|  (includes <div id="root"> + <script src="/app.js">)
   |                                |
   |  GET /app.js                   |
   |------------------------------->|  Generate mount script (with apiPrefix)
@@ -356,7 +336,7 @@ Browser                          Server (Common Lisp)
   |                                |
   |  POST /api/render              |
   |  { component, props }          |
-  |------------------------------->|  Render component to HTML
+  |------------------------------->|  Render page component to HTML
   |<-------------------------------|
   |                                |
   |  User clicks a button          |
@@ -384,8 +364,9 @@ All API endpoints are relative to the route's `apiPrefix`. For a root route the 
 
 | Function | Purpose |
 |---|---|
-| `configure-mount` | Mount a single app at `/` with a static root directory |
-| `configure-route` | Mount a component at an arbitrary prefix; supports `:path-param` |
+| `configure-root-page` | Register the layout component that renders the full HTML document shell |
+| `configure-route` | Map a URL path to a page component; supports `:path-param` |
+| `configure-mount` | Shorthand for `configure-route :path "/"` |
 | `run-server` | Start the server, block until interrupted, then stop cleanly. Port defaults to `PORT` env var or 5000. Called by `s3rup`. |
 | `start-server` | Start the HTTP server on a given port (low-level) |
 | `stop-server` | Stop the running server (low-level) |
@@ -394,9 +375,9 @@ All API endpoints are relative to the route's `apiPrefix`. For a root route the 
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `<prefix>/` | GET | Serve `index.html` (static file or dynamically generated) |
+| `<prefix>/` | GET | Render root component and return full HTML document |
 | `<prefix>/app.js` | GET | Dynamically generated mount entry point |
-| `<prefix>/api/render` | POST | Initial component render |
+| `<prefix>/api/render` | POST | Initial page component render |
 | `<prefix>/action` | POST | Execute action and return updated HTML |
 | `/cl-s3r.js` | GET | Client runtime module (shared, prefix-independent) |
 
@@ -468,29 +449,26 @@ cl-s3r/
       cl-component.js      -- Custom Element base class
   sample/
     01-counter/
-      app.lisp             -- Counter component and route configuration
+      app.lisp             -- Root layout, counter component, and route configuration
       test.lisp            -- Rove tests
       cl-s3r-sample-counter.asd  -- App system (loaded by s3rup)
       01-counter.asd       -- Test system definition
-      index.html           -- Static HTML shell
       Dockerfile
       docker-compose.yml   -- Port 5001
       Makefile             -- make test runs tests via Docker volume mount
     02-todo/
-      app.lisp             -- Todo app (nested components, form submission)
+      app.lisp             -- Root layout, todo app (nested components, form submission)
       test.lisp            -- Rove tests
       cl-s3r-sample-todo.asd     -- App system (loaded by s3rup)
       02-todo.asd          -- Test system definition
-      index.html           -- Static HTML shell
       Dockerfile
       docker-compose.yml   -- Port 5002
       Makefile
     03-books/
-      app.lisp             -- List/detail pattern with path parameters
+      app.lisp             -- Root layout, list/detail pattern with path parameters
       test.lisp            -- Rove tests
       cl-s3r-sample-books.asd    -- App system (loaded by s3rup)
       03-books.asd         -- Test system definition
-      index.html           -- Static HTML shell (list page)
       Dockerfile
       docker-compose.yml   -- Port 5003
       Makefile
@@ -529,7 +507,12 @@ cl-s3r/
 - [x] `s3rup` Roswell command: loads an ASDF system and starts the server
 - [x] Samples refactored to ASDF systems — no more server boilerplate in app code
 
-### Phase 5: UX Optimization
+### Phase 5: Server-Side Root Rendering
+- [x] `configure-root-page` — root layout component replaces static `index.html`
+- [x] Server renders full HTML document from Lisp S-expressions on every initial request
+- [x] `<script>` tag injected automatically; no static files required
+
+### Phase 6: UX Optimization
 - [ ] DOM diffing (virtual DOM or morphdom) to replace full `innerHTML` swap
 - [ ] State encryption and HMAC signing for tamper protection
 

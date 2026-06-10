@@ -1,13 +1,24 @@
 (defpackage #:cl-s3r.sample.todo
   (:use #:cl)
   (:import-from #:cl-s3r.server
-                #:configure-mount)
+                #:configure-route
+                #:configure-root-page)
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:let-component-state
                 #:let-function))
 
 (in-package #:cl-s3r.sample.todo)
+
+(define-component root (children)
+  `(:html (@ (lang "ja"))
+     (:head
+       (:meta (@ (charset "UTF-8")))
+       (:title "cl-s3r Todo"))
+     (:body
+       ,children)))
+
+(configure-root-page :component "root")
 
 ;; todo-item: stateless — receives id/title/done/on-toggle/on-delete as props
 (define-component todo-item (id title done on-toggle on-delete)
@@ -64,8 +75,6 @@
                        (on-toggle (toggle-done))
                        (on-delete (delete-todo))))))))
 
-(configure-mount :target "#root"
+(configure-route :path "/"
                  :component "todo"
-                 :props '()
-                 :static-root (asdf:system-relative-pathname
-                               :cl-s3r-sample-todo ""))
+                 :props '())

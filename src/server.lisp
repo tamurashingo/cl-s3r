@@ -11,25 +11,29 @@
            #:stop-server
            #:configure-route
            #:configure-mount
+           #:configure-root-page
            #:run-server))
 
 (in-package #:cl-s3r.server)
 
 (defvar *handler* nil)
 (defvar *route-registry* (make-hash-table :test 'equal))
+(defvar *root-component* nil)
 
-(defun configure-route (&key (prefix "/") component props path-param
-                              (target "#root") static-root)
-  (setf (gethash prefix *route-registry*)
-        (list :component component
-              :props props
-              :path-param path-param
-              :target target
-              :static-root (when static-root (pathname static-root)))))
+(defun configure-root-page (&key component)
+  (setf *root-component* component))
 
-(defun configure-mount (&key (target "#root") component props static-root)
-  (configure-route :prefix "/" :component component :props props
-                   :target target :static-root static-root))
+(defun configure-route (&key path (prefix nil) component props path-param
+                              (target "#root"))
+  (let ((effective-path (or path prefix "/")))
+    (setf (gethash effective-path *route-registry*)
+          (list :component component
+                :props props
+                :path-param path-param
+                :target target))))
+
+(defun configure-mount (&key (target "#root") component props)
+  (configure-route :path "/" :component component :props props :target target))
 
 (defun starts-with-p (prefix path)
   (let ((plen (length prefix)))
@@ -85,6 +89,21 @@
   (format nil
           "<!DOCTYPE html>~%<html>~%<head>~%  <meta charset=\"UTF-8\">~%</head>~%<body>~%  <div id=\"root\"></div>~%  <script type=\"module\" src=\"~A\"></script>~%</body>~%</html>~%"
           app-js-url))
+
+(defun render-root-html (app-js-url)
+  (if *root-component*
+      (let* ((children '(:div (@ (id "root"))))
+             (rendered (render-component-html *root-component* nil children))
+             (script-tag (format nil "<script type=\"module\" src=\"~A\"></script>" app-js-url))
+             (body-close-pos (search "</body>" rendered))
+             (with-script (if body-close-pos
+                              (concatenate 'string
+                                           (subseq rendered 0 body-close-pos)
+                                           script-tag
+                                           (subseq rendered body-close-pos))
+                              (concatenate 'string rendered script-tag))))
+        (concatenate 'string "<!DOCTYPE html>" (string #\newline) with-script))
+      (generate-index-html app-js-url)))
 
 (defun generate-app-js (config &key (api-prefix "") path-param-key param-value query-params)
   (let* ((target (getf config :target))
@@ -181,29 +200,19 @@
                                   ((string= prefix "/") "")
                                   (t prefix))))
                 (cond
-                  ;; index.html
+                  ;; initial HTML (rendered from root component)
                   ((and (eq method :get)
                         (or (string= effective-subpath "/")
                             (string= effective-subpath "")))
-                   (let* ((qs (getf env :query-string))
-                          (has-qs (and qs (not (string= qs ""))))
-                          (app-js-url (if has-qs
-                                          (format nil "~A/app.js?~A" api-prefix qs)
-                                          (format nil "~A/app.js" api-prefix))))
-                     (if path-param-key
-                         (if param-value
-                             `(200 (:content-type "text/html")
-                                   (,(generate-index-html app-js-url)))
-                             '(404 (:content-type "text/plain") ("Missing path parameter")))
-                         (if has-qs
-                             `(200 (:content-type "text/html")
-                                   (,(generate-index-html app-js-url)))
-                             (let ((index-path (merge-pathnames "index.html"
-                                                                (getf config :static-root))))
-                               (if (probe-file index-path)
-                                   `(200 (:content-type "text/html")
-                                         (,(uiop:read-file-string index-path)))
-                                   '(404 (:content-type "text/plain") ("index.html not found"))))))))
+                   (if (and path-param-key (null param-value))
+                       '(404 (:content-type "text/plain") ("Missing path parameter"))
+                       (let* ((qs (getf env :query-string))
+                              (has-qs (and qs (not (string= qs ""))))
+                              (app-js-url (if has-qs
+                                              (format nil "~A/app.js?~A" api-prefix qs)
+                                              (format nil "~A/app.js" api-prefix))))
+                         `(200 (:content-type "text/html")
+                               (,(render-root-html app-js-url))))))
 
                   ;; Dynamically generated app.js
                   ((and (eq method :get) (string= effective-subpath "/app.js"))
