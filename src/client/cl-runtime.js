@@ -2,6 +2,8 @@
  * cl-runtime - State collection and server communication runtime
  */
 
+import { morphElement } from './cl-morph.js';
+
 /**
  * Recursively collect component states from the given root element.
  * @param {HTMLElement} element - The element to start traversal from
@@ -119,24 +121,25 @@ export async function sendAction(action, rootElement, { apiPrefix = '' } = {}) {
 
     const result = await response.json();
     if (result.html) {
-      // Replace the root component element with the new HTML
       const temp = document.createElement('div');
       temp.innerHTML = result.html;
       const newElement = temp.firstElementChild;
 
-      if (newElement && rootElement.parentNode) {
-        rootElement.parentNode.replaceChild(newElement, rootElement);
+      if (newElement) {
         const redirect = newElement.getAttribute('data-redirect');
         if (redirect) {
           window.location.href = redirect;
           return;
         }
-        // Ensure data-state is set on the new element
+      }
+
+      if (newElement && rootElement.parentNode) {
+        morphElement(rootElement, newElement);
         if (result.state) {
-          newElement.setAttribute('data-state', JSON.stringify(result.state));
+          rootElement.setAttribute('data-state', JSON.stringify(result.state));
         }
       } else {
-        // Fallback
+        // Fallback: rootElement detached from DOM
         rootElement.innerHTML = result.html;
         if (result.state) {
           rootElement.setAttribute('data-state', JSON.stringify(result.state));

@@ -1,0 +1,9 @@
+services:
+  app:
+    build:
+      context: ../../
+      dockerfile: sample/05-carousel/Dockerfile
+    ports:
+      - "${PORT:-5005}:${PORT:-5005}"
+    environment:
+      - PORT=${PORT:-5005}

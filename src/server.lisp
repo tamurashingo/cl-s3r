@@ -219,7 +219,8 @@
                ;; Shared JS files served unconditionally before route matching
                (when (and (eq method :get)
                           (member path '("/cl-s3r.js" "/cl-component.js"
-                                         "/cl-runtime.js" "/cl-mount.js")
+                                         "/cl-runtime.js" "/cl-mount.js"
+                                         "/cl-morph.js")
                                   :test #'string=))
                  (return-from app (serve-client-js path)))
 

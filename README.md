@@ -471,7 +471,7 @@ Browser                          Server (Common Lisp)
   |  { html, state }               |
   |<-------------------------------|
   |                                |
-  |  Replace DOM                   |
+  |  Morph DOM (diff update)        |
 ```
 
 All API endpoints are relative to the route's `apiPrefix`. For a root route the prefix is empty; for `/detail/1` the prefix is `/detail/1`, so the endpoints become `/detail/1/api/render` and `/detail/1/action`.
@@ -505,6 +505,7 @@ All API endpoints are relative to the route's `apiPrefix`. For a root route the 
 | `<prefix>/api/render` | POST | Initial page component render |
 | `<prefix>/action` | POST | Execute action and return updated HTML |
 | `/cl-s3r.js` | GET | Client runtime module (shared, prefix-independent) |
+| `/cl-morph.js` | GET | DOM morphing utility (shared, prefix-independent) |
 
 ## Sample Apps
 
@@ -548,6 +549,17 @@ make image && make up
 
 Open `http://localhost:5004`. Test credentials: `taro/password1`, `jiro/password2`, `saburo/password3`.
 
+### Carousel (`sample/05-carousel`)
+
+Demonstrates CSS transition animations powered by DOM morphing. Five colored slides are navigated with previous/next buttons. The server updates only the `transform: translateX(...)` style attribute; because the DOM morph preserves the element in place rather than replacing it, the browser's `transition` smoothly animates the slide change.
+
+```sh
+cd sample/05-carousel
+make image && make up
+```
+
+Open `http://localhost:5005`.
+
 To stop any sample:
 
 ```sh
@@ -584,6 +596,7 @@ cl-s3r/
       cl-s3r.js            -- Client entry module (barrel)
       cl-mount.js          -- mount() with apiPrefix support
       cl-runtime.js        -- State collection and server communication
+      cl-morph.js          -- DOM morphing utility (in-place diff update)
       cl-component.js      -- Custom Element base class
   sample/
     01-counter/
@@ -616,6 +629,12 @@ cl-s3r/
       04-login.asd         -- App and test system definition
       Dockerfile
       docker-compose.yml   -- Port 5004
+      Makefile
+    05-carousel/
+      app.lisp             -- Carousel component with CSS transition animation
+      05-carousel.asd      -- App system definition
+      Dockerfile
+      docker-compose.yml   -- Port 5005
       Makefile
 ```
 
@@ -669,7 +688,8 @@ cl-s3r/
 - [x] Login/session sample app (`sample/04-login`) with protected routes and last-login tracking
 
 ### Phase 8: UX Optimization
-- [ ] DOM diffing (virtual DOM or morphdom) to replace full `innerHTML` swap
+- [x] DOM morphing (`cl-morph.js`) to replace full `innerHTML` swap — preserves element references, enables CSS transitions
+- [x] Carousel sample app (`sample/05-carousel`) demonstrating CSS transition animations via DOM morphing
 - [ ] State encryption and HMAC signing for tamper protection
 
 ## License
