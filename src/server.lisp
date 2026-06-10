@@ -8,6 +8,11 @@
                 #:render-component-html
                 #:normalize-state-keys
                 #:call-metadata)
+  (:import-from #:cl-s3r.cookie
+                #:*current-cookies*
+                #:*pending-cookie-changes*
+                #:parse-cookies
+                #:inject-set-cookie-headers)
   (:export #:start-server
            #:stop-server
            #:configure-route
@@ -204,77 +209,82 @@
         `(404 (:content-type "text/plain") ("Not Found")))))
 
 (defun app (env)
-  (let ((path (getf env :path-info))
-        (method (getf env :request-method)))
+  (let ((*current-cookies* (parse-cookies (gethash "cookie" (getf env :headers))))
+        (*pending-cookie-changes* nil))
+    (let ((response
+           (block app
+             (let ((path (getf env :path-info))
+                   (method (getf env :request-method)))
 
-    ;; Shared JS files served unconditionally before route matching
-    (when (and (eq method :get)
-               (member path '("/cl-s3r.js" "/cl-component.js"
-                              "/cl-runtime.js" "/cl-mount.js")
-                       :test #'string=))
-      (return-from app (serve-client-js path)))
+               ;; Shared JS files served unconditionally before route matching
+               (when (and (eq method :get)
+                          (member path '("/cl-s3r.js" "/cl-component.js"
+                                         "/cl-runtime.js" "/cl-mount.js")
+                                  :test #'string=))
+                 (return-from app (serve-client-js path)))
 
-    ;; Longest-prefix route match
-    (multiple-value-bind (prefix config)
-        (find-route-for-path path)
-      (if (null config)
-          '(404 (:content-type "text/plain") ("Not Found"))
-          (let* ((path-param-key (getf config :path-param))
-                 (raw-subpath (if (string= prefix "/")
-                                  path
-                                  (subseq path (length prefix))))
-                 (raw-subpath (if (string= raw-subpath "") "/" raw-subpath)))
-            (multiple-value-bind (param-value effective-subpath)
-                (if path-param-key
-                    (extract-path-param raw-subpath)
-                    (values nil raw-subpath))
-              (let ((api-prefix (cond
-                                  ((and path-param-key param-value)
-                                   (format nil "~A/~A" prefix param-value))
-                                  ((string= prefix "/") "")
-                                  (t prefix))))
-                (cond
-                  ;; initial HTML (rendered from root component)
-                  ((and (eq method :get)
-                        (or (string= effective-subpath "/")
-                            (string= effective-subpath "")))
-                   (if (and path-param-key (null param-value))
-                       '(404 (:content-type "text/plain") ("Missing path parameter"))
-                       (let* ((qs (getf env :query-string))
-                              (has-qs (and qs (not (string= qs ""))))
-                              (app-js-url (if has-qs
-                                              (format nil "~A/app.js?~A" api-prefix qs)
-                                              (format nil "~A/app.js" api-prefix)))
-                              (meta-props (append (getf config :props)
-                                                  (when (and path-param-key param-value)
-                                                    (list path-param-key
-                                                          (parse-param-value param-value)))
-                                                  (parse-query-string qs)))
-                              (metadata (call-metadata (getf config :component) meta-props)))
-                         `(200 (:content-type "text/html")
-                               (,(render-root-html app-js-url :metadata metadata))))))
+               ;; Longest-prefix route match
+               (multiple-value-bind (prefix config)
+                   (find-route-for-path path)
+                 (if (null config)
+                     '(404 (:content-type "text/plain") ("Not Found"))
+                     (let* ((path-param-key (getf config :path-param))
+                            (raw-subpath (if (string= prefix "/")
+                                             path
+                                             (subseq path (length prefix))))
+                            (raw-subpath (if (string= raw-subpath "") "/" raw-subpath)))
+                       (multiple-value-bind (param-value effective-subpath)
+                           (if path-param-key
+                               (extract-path-param raw-subpath)
+                               (values nil raw-subpath))
+                         (let ((api-prefix (cond
+                                             ((and path-param-key param-value)
+                                              (format nil "~A/~A" prefix param-value))
+                                             ((string= prefix "/") "")
+                                             (t prefix))))
+                           (cond
+                             ;; initial HTML (rendered from root component)
+                             ((and (eq method :get)
+                                   (or (string= effective-subpath "/")
+                                       (string= effective-subpath "")))
+                              (if (and path-param-key (null param-value))
+                                  '(404 (:content-type "text/plain") ("Missing path parameter"))
+                                  (let* ((qs (getf env :query-string))
+                                         (has-qs (and qs (not (string= qs ""))))
+                                         (app-js-url (if has-qs
+                                                         (format nil "~A/app.js?~A" api-prefix qs)
+                                                         (format nil "~A/app.js" api-prefix)))
+                                         (meta-props (append (getf config :props)
+                                                             (when (and path-param-key param-value)
+                                                               (list path-param-key
+                                                                     (parse-param-value param-value)))
+                                                             (parse-query-string qs)))
+                                         (metadata (call-metadata (getf config :component) meta-props)))
+                                    `(200 (:content-type "text/html")
+                                          (,(render-root-html app-js-url :metadata metadata))))))
 
-                  ;; Dynamically generated app.js
-                  ((and (eq method :get) (string= effective-subpath "/app.js"))
-                   (let ((query-params (parse-query-string (getf env :query-string))))
-                     `(200 (:content-type "application/javascript")
-                           (,(generate-app-js config
-                                              :api-prefix api-prefix
-                                              :path-param-key path-param-key
-                                              :param-value param-value
-                                              :query-params query-params)))))
+                             ;; Dynamically generated app.js
+                             ((and (eq method :get) (string= effective-subpath "/app.js"))
+                              (let ((query-params (parse-query-string (getf env :query-string))))
+                                `(200 (:content-type "application/javascript")
+                                      (,(generate-app-js config
+                                                         :api-prefix api-prefix
+                                                         :path-param-key path-param-key
+                                                         :param-value param-value
+                                                         :query-params query-params)))))
 
-                  ;; API: Initial render
-                  ((and (eq method :post) (string= effective-subpath "/api/render"))
-                   (handle-render env))
+                             ;; API: Initial render
+                             ((and (eq method :post) (string= effective-subpath "/api/render"))
+                              (handle-render env))
 
-                  ;; API: Action handler
-                  ((and (eq method :post) (string= effective-subpath "/action"))
-                   (let ((payload (parse-json-body env)))
-                     `(200 (:content-type "application/json")
-                           (,(handle-action payload)))))
+                             ;; API: Action handler
+                             ((and (eq method :post) (string= effective-subpath "/action"))
+                              (let ((payload (parse-json-body env)))
+                                `(200 (:content-type "application/json")
+                                      (,(handle-action payload)))))
 
-                  (t '(404 (:content-type "text/plain") ("Not Found")))))))))))
+                             (t '(404 (:content-type "text/plain") ("Not Found")))))))))))))
+      (inject-set-cookie-headers response))))
 
 (defun start-server (&key (port 5000) (address "0.0.0.0"))
   (format t "Starting server on ~A:~A...~%" address port)

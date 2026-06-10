@@ -26,6 +26,14 @@ export async function mount(selector, config) {
     const result = await response.json();
     if (result.html) {
       target.innerHTML = result.html;
+      const rootEl = target.firstElementChild;
+      if (rootEl) {
+        const redirect = rootEl.getAttribute('data-redirect');
+        if (redirect) {
+          window.location.href = redirect;
+          return;
+        }
+      }
     }
 
     initRuntime(selector, { apiPrefix });

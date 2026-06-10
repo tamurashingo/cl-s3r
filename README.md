@@ -329,6 +329,71 @@ When visiting `/` (no `define-metadata` for `impl-list`), the root layout's orig
               #:define-metadata)
 ```
 
+## Cookie Support
+
+`cl-s3r` provides a `cl-s3r.cookie` package for reading request cookies and writing response cookies inside component code. Cookie state is bound per-request via dynamic variables — no global session state.
+
+### Import
+
+```lisp
+(:import-from #:cl-s3r.cookie
+              #:get-cookie
+              #:set-response-cookie
+              #:delete-response-cookie)
+```
+
+### API
+
+| Function | Purpose |
+|---|---|
+| `(get-cookie name)` | Return the value of cookie `name` from the current request, or `nil` |
+| `(set-response-cookie name value &key max-age path domain secure http-only same-site)` | Queue a `Set-Cookie` header for the current response |
+| `(delete-response-cookie name &key path domain)` | Queue a cookie deletion (`Max-Age=0`) |
+
+### Example
+
+```lisp
+(define-component my-page ()
+  (let-function
+      ((do-login (form-data)
+         (when (valid-credentials-p (getf form-data :|username|)
+                                    (getf form-data :|password|))
+           (set-response-cookie "session" (getf form-data :|username|)
+                                :http-only t :path "/")))
+       (do-logout ()
+         (delete-response-cookie "session" :path "/")))
+    (let ((session (get-cookie "session")))
+      (if session
+          `(:div (:p ,(format nil "Welcome, ~A!" session))
+                 (:button (@ (onclick (do-logout))) "Logout"))
+          `(:form (@ (onsubmit (do-login)))
+             (:input (@ (type "text") (name "username")))
+             (:input (@ (type "password") (name "password")))
+             (:button (@ (type "submit")) "Login"))))))
+```
+
+### How It Works
+
+At the start of every request, `*current-cookies*` is bound to the parsed `Cookie:` header. `get-cookie` reads from this binding. `set-response-cookie` and `delete-response-cookie` push entries onto `*pending-cookie-changes*`. After the handler returns, `Set-Cookie` headers are injected into the response automatically.
+
+### Testing with Cookies
+
+Bind `*current-cookies*` and `*pending-cookie-changes*` in tests to simulate request cookies and capture queued cookie changes:
+
+```lisp
+;; Import in your test package:
+;;   (:import-from #:cl-s3r.cookie #:*current-cookies* #:*pending-cookie-changes*)
+
+(let ((*current-cookies* '(("session" . "taro")))
+      (*pending-cookie-changes* nil))
+  (let* ((r1 (test-render-component "my-page" :args '()))
+         (r2 (test-call-action "my-page" "do-logout"
+                               :state (getf r1 :state)
+                               :action-args '())))
+    ;; Check that a cookie deletion was queued
+    (assert (= 0 (getf (first *pending-cookie-changes*) :max-age)))))
+```
+
 ## Testing Components
 
 `cl-s3r` provides a `cl-s3r.testing` package for unit-testing components without an HTTP server. It follows the library's stateless philosophy: state is passed explicitly between calls.
@@ -472,6 +537,17 @@ make image && make up
 
 Open `http://localhost:5003`.
 
+### Login / Session (`sample/04-login`)
+
+Demonstrates cookie-based authentication: a login form at `/`, a session-protected `/detail` page, and server-side last-login tracking.
+
+```sh
+cd sample/04-login
+make image && make up
+```
+
+Open `http://localhost:5004`. Test credentials: `taro/password1`, `jiro/password2`, `saburo/password3`.
+
 To stop any sample:
 
 ```sh
@@ -486,6 +562,7 @@ Each sample has a `make test` target. It uses the pre-built Docker image but mou
 cd sample/01-counter && make test
 cd sample/02-todo    && make test
 cd sample/03-books   && make test
+cd sample/04-login   && make test
 ```
 
 `make image` must have been run at least once before running tests.
@@ -501,6 +578,7 @@ cl-s3r/
     renderer.lisp          -- S-expression to HTML converter
     component.lisp         -- Component macros and action dispatch
     testing.lisp           -- Test utilities (cl-s3r.testing package)
+    cookie.lisp            -- Per-request cookie read/write (cl-s3r.cookie package)
     server.lisp            -- HTTP server, prefix routing, path-param support
     client/
       cl-s3r.js            -- Client entry module (barrel)
@@ -531,6 +609,13 @@ cl-s3r/
       03-books.asd         -- Test system definition
       Dockerfile
       docker-compose.yml   -- Port 5003
+      Makefile
+    04-login/
+      app.lisp             -- Root layout, cookie-based login, session-protected detail page
+      test.lisp            -- Rove tests
+      04-login.asd         -- App and test system definition
+      Dockerfile
+      docker-compose.yml   -- Port 5004
       Makefile
 ```
 
@@ -576,7 +661,14 @@ cl-s3r/
 - [x] `define-metadata` — generate page-level metadata (title etc.) from route props
 - [x] Server injects metadata into the HTML document on initial render
 
-### Phase 7: UX Optimization
+### Phase 7: Cookie Support
+- [x] `cl-s3r.cookie` package — per-request `*current-cookies*` and `*pending-cookie-changes*` dynamic variables
+- [x] `parse-cookies` reads the `Cookie:` request header (via Clack `:headers` hash table)
+- [x] `get-cookie`, `set-response-cookie`, `delete-response-cookie` for component-level cookie access
+- [x] `inject-set-cookie-headers` appends `Set-Cookie` headers to the Clack response automatically
+- [x] Login/session sample app (`sample/04-login`) with protected routes and last-login tracking
+
+### Phase 8: UX Optimization
 - [ ] DOM diffing (virtual DOM or morphdom) to replace full `innerHTML` swap
 - [ ] State encryption and HMAC signing for tamper protection
 

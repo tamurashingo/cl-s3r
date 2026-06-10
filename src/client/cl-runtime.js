@@ -126,6 +126,11 @@ export async function sendAction(action, rootElement, { apiPrefix = '' } = {}) {
 
       if (newElement && rootElement.parentNode) {
         rootElement.parentNode.replaceChild(newElement, rootElement);
+        const redirect = newElement.getAttribute('data-redirect');
+        if (redirect) {
+          window.location.href = redirect;
+          return;
+        }
         // Ensure data-state is set on the new element
         if (result.state) {
           newElement.setAttribute('data-state', JSON.stringify(result.state));
