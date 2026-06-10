@@ -13,57 +13,109 @@ cl-s3r is a Common Lisp web framework that lets you build reactive web UIs using
 
 ## Quick Start
 
+This section walks through building a counter app from scratch.
+
 ### Prerequisites
 
-- Docker and Docker Compose
+- [Roswell](https://github.com/roswell/roswell)
+- [SBCL](https://www.sbcl.org/) (installable via Roswell: `ros install sbcl`)
 
-### Running the Counter Sample
-
-```sh
-cd sample/01-counter
-make image
-make up
-```
-
-Open `http://localhost:5001` in your browser.
-
-### Running the Todo Sample
+### Install s3rup
 
 ```sh
-cd sample/02-todo
-make image
-make up
+ros install tamurashingo/cl-s3r
 ```
 
-Open `http://localhost:5002` in your browser.
-
-### Running the Implementations List/Detail Sample
+Verify the installation:
 
 ```sh
-cd sample/03-books
-make image
-make up
+s3rup --help
 ```
 
-Open `http://localhost:5003` in your browser.
-
-To stop any sample:
+### Create the Project
 
 ```sh
-make down
+mkdir counter
+cd counter
 ```
 
-### Running Sample Tests
+### 1. ASDF System File
 
-Each sample has a `make test` target. It uses the pre-built Docker image but mounts the current source tree, so tests always run against the latest code without rebuilding the image.
+Create `counter.asd`:
+
+```lisp
+(defsystem "counter"
+  :depends-on (:cl-s3r)
+  :components ((:file "app")))
+```
+
+### 2. HTML Shell
+
+Create `index.html`:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Counter</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
+```
+
+### 3. Component and Route
+
+Create `app.lisp`:
+
+```lisp
+(defpackage :counter
+  (:use :cl)
+  (:import-from :cl-s3r.server
+                :configure-mount)
+  (:import-from :cl-s3r.component
+                :define-component
+                :let-component-state
+                :let-function))
+
+(in-package :counter)
+
+(define-component counter-app (initial-count)
+  (let-component-state ((count initial-count))
+    (let-function ((increment () (incf count))
+                   (decrement () (decf count)))
+      `(:div
+         (:h1 "Counter App")
+         (:p "Count: " ,count)
+         (:button (@ (onclick (increment))) "+")
+         (:button (@ (onclick (decrement))) "-")))))
+
+(configure-mount :target "#root"
+                 :component "counter-app"
+                 :props '(:initial-count 0)
+                 :static-root (asdf:system-relative-pathname :counter ""))
+```
+
+### 4. Run
 
 ```sh
-cd sample/01-counter && make test
-cd sample/02-todo    && make test
-cd sample/03-books   && make test
+s3rup ./counter.asd
 ```
 
-`make image` must have been run at least once before running tests.
+Open `http://localhost:5000` in your browser.
+
+To use a different port:
+
+```sh
+s3rup --port 8080 ./counter.asd
+# or
+PORT=8080 s3rup ./counter.asd
+```
+
+Press Ctrl+C to stop the server.
 
 ## Defining Components
 
@@ -155,9 +207,7 @@ For a single-page app at the root path, use `configure-mount`. Provide the stati
 (configure-mount :target "#root"
                  :component "counter-app"
                  :props '(:initial-count 0)
-                 :static-root (asdf:system-relative-pathname :cl-s3r "sample/01-counter/"))
-
-(start-server :port 5001)
+                 :static-root (asdf:system-relative-pathname :my-app ""))
 ```
 
 ### Multiple Apps / Path Prefixes (`configure-route`)
@@ -169,7 +219,7 @@ Use `configure-route` to mount different components at different URL prefixes. R
 (configure-route :prefix "/"
                  :component "impl-list"
                  :props '()
-                 :static-root (asdf:system-relative-pathname :cl-s3r "sample/03-books/")
+                 :static-root (asdf:system-relative-pathname :my-app "")
                  :target "#root")
 
 ;; Serve the detail component at /detail/:id
@@ -178,8 +228,6 @@ Use `configure-route` to mount different components at different URL prefixes. R
                  :component "impl-detail"
                  :props '()
                  :target "#root")
-
-(start-server :port 5003)
 ```
 
 #### Path Parameters
@@ -270,8 +318,7 @@ Return value shape:
 ### Usage Example
 
 ```lisp
-(ql:quickload :cl-s3r)
-(load "sample/01-counter/app.lisp")
+(ql:quickload :cl-s3r-sample-counter)
 
 (let* ((r1 (cl-s3r.testing:test-render-component "counter-app" :args '(0)))
        (r2 (cl-s3r.testing:test-call-action "counter-app" "increment"
@@ -339,8 +386,9 @@ All API endpoints are relative to the route's `apiPrefix`. For a root route the 
 |---|---|
 | `configure-mount` | Mount a single app at `/` with a static root directory |
 | `configure-route` | Mount a component at an arbitrary prefix; supports `:path-param` |
-| `start-server` | Start the HTTP server on a given port |
-| `stop-server` | Stop the running server |
+| `run-server` | Start the server, block until interrupted, then stop cleanly. Port defaults to `PORT` env var or 5000. Called by `s3rup`. |
+| `start-server` | Start the HTTP server on a given port (low-level) |
+| `stop-server` | Stop the running server (low-level) |
 
 ### Server Endpoints (per route prefix)
 
@@ -352,11 +400,62 @@ All API endpoints are relative to the route's `apiPrefix`. For a root route the 
 | `<prefix>/action` | POST | Execute action and return updated HTML |
 | `/cl-s3r.js` | GET | Client runtime module (shared, prefix-independent) |
 
+## Sample Apps
+
+Each sample runs via Docker and requires Docker Compose.
+
+### Counter (`sample/01-counter`)
+
+```sh
+cd sample/01-counter
+make image && make up
+```
+
+Open `http://localhost:5001`.
+
+### Todo (`sample/02-todo`)
+
+```sh
+cd sample/02-todo
+make image && make up
+```
+
+Open `http://localhost:5002`.
+
+### Implementations List/Detail (`sample/03-books`)
+
+```sh
+cd sample/03-books
+make image && make up
+```
+
+Open `http://localhost:5003`.
+
+To stop any sample:
+
+```sh
+make down
+```
+
+### Running Sample Tests
+
+Each sample has a `make test` target. It uses the pre-built Docker image but mounts the current source tree, so tests always run against the latest code without rebuilding the image.
+
+```sh
+cd sample/01-counter && make test
+cd sample/02-todo    && make test
+cd sample/03-books   && make test
+```
+
+`make image` must have been run at least once before running tests.
+
 ## Project Structure
 
 ```
 cl-s3r/
   cl-s3r.asd              -- System definition
+  ros/
+    s3rup.ros              -- Roswell script: s3rup <app.asd>
   src/
     renderer.lisp          -- S-expression to HTML converter
     component.lisp         -- Component macros and action dispatch
@@ -369,9 +468,10 @@ cl-s3r/
       cl-component.js      -- Custom Element base class
   sample/
     01-counter/
-      app.lisp             -- Counter component and server setup
+      app.lisp             -- Counter component and route configuration
       test.lisp            -- Rove tests
-      01-counter.asd       -- ASDF system definition with test-op
+      cl-s3r-sample-counter.asd  -- App system (loaded by s3rup)
+      01-counter.asd       -- Test system definition
       index.html           -- Static HTML shell
       Dockerfile
       docker-compose.yml   -- Port 5001
@@ -379,7 +479,8 @@ cl-s3r/
     02-todo/
       app.lisp             -- Todo app (nested components, form submission)
       test.lisp            -- Rove tests
-      02-todo.asd          -- ASDF system definition with test-op
+      cl-s3r-sample-todo.asd     -- App system (loaded by s3rup)
+      02-todo.asd          -- Test system definition
       index.html           -- Static HTML shell
       Dockerfile
       docker-compose.yml   -- Port 5002
@@ -387,7 +488,8 @@ cl-s3r/
     03-books/
       app.lisp             -- List/detail pattern with path parameters
       test.lisp            -- Rove tests
-      03-books.asd         -- ASDF system definition with test-op
+      cl-s3r-sample-books.asd    -- App system (loaded by s3rup)
+      03-books.asd         -- Test system definition
       index.html           -- Static HTML shell (list page)
       Dockerfile
       docker-compose.yml   -- Port 5003
@@ -422,7 +524,12 @@ cl-s3r/
 - [x] Dynamic path parameters (`:path-param`) with auto-generated HTML and props injection
 - [x] List/detail sample app (`sample/03-books`)
 
-### Phase 4: UX Optimization
+### Phase 4: Command-Line Tool
+- [x] `run-server` in the cl-s3r core for server lifecycle management
+- [x] `s3rup` Roswell command: loads an ASDF system and starts the server
+- [x] Samples refactored to ASDF systems — no more server boilerplate in app code
+
+### Phase 5: UX Optimization
 - [ ] DOM diffing (virtual DOM or morphdom) to replace full `innerHTML` swap
 - [ ] State encryption and HMAC signing for tamper protection
 

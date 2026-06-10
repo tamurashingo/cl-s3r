@@ -13,4 +13,7 @@ ENV PATH="/root/.roswell/bin:$PATH"
 RUN ros install rove
 RUN ros run --eval '(ql:quickload :cl-s3r)' --eval '(quit)'
 
-CMD ["--load", "sample/03-books/app.lisp", "--eval", "(cl-s3r.sample.books:run)"]
+RUN ros install /app/ros/s3rup.ros
+
+ENTRYPOINT []
+CMD ["s3rup", "/app/sample/03-books/cl-s3r-sample-books.asd"]

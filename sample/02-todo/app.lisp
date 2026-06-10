@@ -1,15 +1,11 @@
-(ql:quickload :cl-s3r)
-
 (defpackage #:cl-s3r.sample.todo
   (:use #:cl)
   (:import-from #:cl-s3r.server
-                #:configure-mount
-                #:start-server)
+                #:configure-mount)
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:let-component-state
-                #:let-function)
-  (:export #:run))
+                #:let-function))
 
 (in-package #:cl-s3r.sample.todo)
 
@@ -72,10 +68,4 @@
                  :component "todo"
                  :props '()
                  :static-root (asdf:system-relative-pathname
-                               :cl-s3r "sample/02-todo/"))
-
-(defun run ()
-  (let ((port (parse-integer (or (uiop:getenv "PORT") "5000"))))
-    (format t "Starting Todo Sample App on port ~A...~%" port)
-    (start-server :port port)
-    (loop (sleep 1000))))
+                               :cl-s3r-sample-todo ""))

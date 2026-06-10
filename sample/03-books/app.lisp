@@ -1,15 +1,11 @@
-(ql:quickload :cl-s3r)
-
 (defpackage #:cl-s3r.sample.books
   (:use #:cl)
   (:import-from #:cl-s3r.server
-                #:configure-route
-                #:start-server)
+                #:configure-route)
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:let-component-state
-                #:let-function)
-  (:export #:run))
+                #:let-function))
 
 (in-package #:cl-s3r.sample.books)
 
@@ -96,7 +92,7 @@
 (configure-route :prefix "/"
                  :component "impl-list"
                  :props '()
-                 :static-root (asdf:system-relative-pathname :cl-s3r "sample/03-books/")
+                 :static-root (asdf:system-relative-pathname :cl-s3r-sample-books "")
                  :target "#root")
 
 (configure-route :prefix "/detail"
@@ -104,9 +100,3 @@
                  :component "impl-detail"
                  :props '()
                  :target "#root")
-
-(defun run ()
-  (let ((port (parse-integer (or (uiop:getenv "PORT") "5000"))))
-    (format t "Starting CL Implementations Sample on port ~A...~%" port)
-    (start-server :port port)
-    (loop (sleep 1000))))

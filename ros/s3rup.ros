@@ -1,0 +1,73 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+  (ql:quickload :cl-s3r :silent t))
+
+(defpackage :ros.script.s3rup.3990073777
+  (:use :cl))
+(in-package :ros.script.s3rup.3990073777)
+
+(defun print-usage ()
+  (format *error-output*
+          "Usage: s3rup [--port PORT] [-p PORT] <app.asd>~%~%~
+           Options:~%~
+             --port PORT, -p PORT   Port to listen on (default: PORT env var or 5000)~%~%~
+           Example:~%~
+             s3rup ./my-app.asd~%~
+             s3rup --port 8080 ./my-app.asd~%"))
+
+(defun parse-args (args)
+  "Returns (values asd-file port-or-nil). Signals error on bad input."
+  (let ((port nil)
+        (remaining args))
+    (loop while remaining do
+      (let ((arg (first remaining)))
+        (cond
+          ((or (string= arg "--port") (string= arg "-p"))
+           (unless (second remaining)
+             (error "~A requires a value" arg))
+           (setf port (handler-case (parse-integer (second remaining))
+                        (error () (error "~A value must be an integer, got: ~S"
+                                         arg (second remaining)))))
+           (setf remaining (cddr remaining)))
+          ((and (> (length arg) 0) (char= (char arg 0) #\-))
+           (error "Unknown option: ~A" arg))
+          (t
+           (return)))))
+    (values (first remaining) port)))
+
+(defun main (&rest argv)
+  (when (or (null argv)
+            (member "--help" argv :test #'string=)
+            (member "-h" argv :test #'string=))
+    (print-usage)
+    (uiop:quit (if (null argv) 1 0)))
+
+  (multiple-value-bind (asd-file port)
+      (handler-case (parse-args argv)
+        (error (e)
+          (format *error-output* "Error: ~A~%" e)
+          (print-usage)
+          (uiop:quit 1)))
+
+    (unless asd-file
+      (format *error-output* "Error: no .asd file specified~%")
+      (print-usage)
+      (uiop:quit 1))
+
+    (unless (probe-file asd-file)
+      (format *error-output* "Error: file not found: ~A~%" asd-file)
+      (uiop:quit 1))
+
+    ;; ASDF convention: filename = system name (my-app.asd -> "my-app")
+    (let* ((asd-path (truename asd-file))
+           (system-name (pathname-name asd-path)))
+      (asdf:load-asd asd-path)
+      (asdf:load-system system-name)
+      (cl-s3r.server:run-server :port port))))
+
+;;; vim: set ft=lisp lisp:

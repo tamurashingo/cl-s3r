@@ -15,4 +15,7 @@ RUN ros install rove
 # rove が使う roswell 環境に cl-s3r をプリロードする
 RUN ros run --eval '(ql:quickload :cl-s3r)' --eval '(quit)'
 
-CMD ["--load", "sample/01-counter/app.lisp", "--eval", "(cl-s3r.sample.counter:run)"]
+RUN ros install /app/ros/s3rup.ros
+
+ENTRYPOINT []
+CMD ["s3rup", "/app/sample/01-counter/cl-s3r-sample-counter.asd"]

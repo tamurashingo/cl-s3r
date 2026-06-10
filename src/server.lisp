@@ -10,7 +10,8 @@
   (:export #:start-server
            #:stop-server
            #:configure-route
-           #:configure-mount))
+           #:configure-mount
+           #:run-server))
 
 (in-package #:cl-s3r.server)
 
@@ -234,3 +235,25 @@
   (when *handler*
     (clack:stop *handler*)
     (setf *handler* nil)))
+
+(defun run-server (&key port)
+  "Start the server and block until interrupted. Stops the server cleanly on exit.
+PORT defaults to the PORT environment variable, then 5000."
+  (let ((effective-port (or port
+                            (let ((env (uiop:getenv "PORT")))
+                              (when (and env (not (string= env "")))
+                                (parse-integer env)))
+                            5000)))
+    (start-server :port effective-port)
+    (format t "Server running on port ~A. Press Ctrl+C to stop.~%" effective-port)
+    (handler-case
+        (loop (sleep 1))
+      #+sbcl
+      (sb-sys:interactive-interrupt ()
+        (format t "~%Shutting down...~%")
+        (stop-server)
+        (uiop:quit 0))
+      (error (e)
+        (format *error-output* "~%Unexpected error: ~A~%" e)
+        (stop-server)
+        (uiop:quit 1)))))
