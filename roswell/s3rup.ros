@@ -67,7 +67,7 @@ exec ros -Q -- $0 "$@"
     (let* ((asd-path (truename asd-file))
            (system-name (pathname-name asd-path)))
       (asdf:load-asd asd-path)
-      (asdf:load-system system-name)
+      (ql:quickload system-name)
       (cl-s3r.server:run-server :port port))))
 
 ;;; vim: set ft=lisp lisp:
