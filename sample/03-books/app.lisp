@@ -11,7 +11,7 @@
 
 (in-package #:cl-s3r.sample.books)
 
-(define-component root (children)
+(define-component root (&key children &allow-other-keys)
   `(:html (@ (lang "ja"))
      (:head
        (:meta (@ (charset "UTF-8")))
@@ -55,7 +55,7 @@
      :license "GNU LGPL v2"
      :repo "https://www.gnu.org/software/gcl/")))
 
-(define-component impl-list (filter)
+(define-component impl-list (&key filter &allow-other-keys)
   (let* ((effective-filter (when (and filter (not (string= filter ""))) filter))
          (items (if effective-filter
                     (remove-if-not
@@ -87,7 +87,7 @@
                             " — "
                             ,(getf impl :description)))))))
 
-(define-component impl-detail (id)
+(define-component impl-detail (&key id &allow-other-keys)
   (let ((impl (find id *implementations* :key (lambda (x) (getf x :id)) :test #'=)))
     (if impl
         `(:div
@@ -101,7 +101,7 @@
            (:h1 "Implementation not found")
            (:p (:a (@ (href "/")) "← Back to list"))))))
 
-(define-metadata impl-detail (id)
+(define-metadata impl-detail (&key id &allow-other-keys)
   (let ((impl (find id *implementations*
                     :key (lambda (x) (getf x :id))
                     :test #'=)))

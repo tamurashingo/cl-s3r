@@ -128,7 +128,7 @@
 (defun render-root-html (app-js-url &key metadata)
   (if *root-component*
       (let* ((children '(:div (@ (id "root"))))
-             (rendered (render-component-html *root-component* nil children))
+             (rendered (render-component-html *root-component* nil :children children))
              (script-tag (format nil "<script type=\"module\" src=\"~A\"></script>" app-js-url))
              (body-close-pos (search "</body>" rendered))
              (with-script (if body-close-pos
@@ -185,17 +185,10 @@
   (let* ((payload (parse-json-body env))
          (component-name (getf payload :|component|))
          (props-raw (getf payload :|props|)))
-    (let* ((comp-info (gethash (string-downcase (string component-name))
-                               *component-registry*))
-           (comp-args (getf comp-info :args))
-           (arg-values (loop for arg-sym in comp-args
-                             collect (getf props-raw
-                                          (make-keyword
-                                           (string-upcase (string arg-sym)))))))
-      (let ((html (apply #'render-component-html
-                         component-name
-                         nil
-                         arg-values)))
+    ;; Convert jonathan's :|key| style to uppercase :KEY keywords
+    (let ((props-plist (loop for (k v) on props-raw by #'cddr
+                             nconc (list (make-keyword (string-upcase (string k))) v))))
+      (let ((html (apply #'render-component-html component-name nil props-plist)))
         `(200 (:content-type "application/json")
               (,(jonathan:to-json `(:|html| ,html))))))))
 

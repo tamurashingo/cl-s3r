@@ -10,7 +10,7 @@
 
 (in-package #:cl-s3r.sample.todo)
 
-(define-component root (children)
+(define-component root (&key children &allow-other-keys)
   `(:html (@ (lang "ja"))
      (:head
        (:meta (@ (charset "UTF-8")))
@@ -21,7 +21,7 @@
 (configure-root-page :component "root")
 
 ;; todo-item: stateless — receives id/title/done/on-toggle/on-delete as props
-(define-component todo-item (id title done on-toggle on-delete)
+(define-component todo-item (&key id title done on-toggle on-delete &allow-other-keys)
   `(:li (@ (data-id ,id))
      (:input (@ (type "checkbox")
                 ,@(when done '((checked "checked")))
@@ -32,7 +32,7 @@
 ;; todo-list: stateless — receives todos list and callback templates
 ;; on-toggle = (TOGGLE-DONE), on-delete = (DELETE-TODO)
 ;; appends item id to construct per-item callbacks like (TOGGLE-DONE 1)
-(define-component todo-list (todos on-toggle on-delete)
+(define-component todo-list (&key todos on-toggle on-delete &allow-other-keys)
   `(:ul
      ,@(loop for todo in todos
              collect `(todo-item
@@ -43,13 +43,13 @@
                            (on-delete ,(append on-delete (list (getf todo :id)))))))))
 
 ;; todo-input: stateless — receives on-add callback and renders an input form
-(define-component todo-input (on-add)
+(define-component todo-input (&key on-add &allow-other-keys)
   `(:form (@ (onsubmit ,on-add))
      (:input (@ (type "text") (name "todo-text") (placeholder "New todo...")))
      (:button (@ (type "submit")) "Add")))
 
 ;; todo: root component — owns the full todo list state
-(define-component todo ()
+(define-component todo (&key &allow-other-keys)
   (let-component-state ((todos '()) (next-id 0))
     (let-function
         ((add-todo (form-data)

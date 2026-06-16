@@ -39,7 +39,7 @@
 
 ;;; --- root component ---
 
-(define-component root (children)
+(define-component root (&key children &allow-other-keys)
   (let ((session (get-cookie "session")))
     `(:html (@ (lang "ja"))
        (:head
@@ -56,7 +56,7 @@
 
 ;;; --- home page (/) ---
 
-(define-component home-page ()
+(define-component home-page (&key &allow-other-keys)
   (let-component-state ((error-msg nil)
                         (redirect nil))
     (let-function
@@ -102,7 +102,7 @@
 
 ;;; --- detail page (/detail) ---
 
-(define-component detail-page ()
+(define-component detail-page (&key &allow-other-keys)
   (let ((session (get-cookie "session")))
     (if (null session)
         ;; not logged in: redirect to /
