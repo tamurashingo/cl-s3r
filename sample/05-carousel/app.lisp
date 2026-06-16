@@ -10,7 +10,7 @@
 
 (in-package #:cl-s3r.sample.carousel)
 
-(define-component root (children)
+(define-component root (&key children &allow-other-keys)
   `(:html (@ (lang "ja"))
      (:head
        (:meta (@ (charset "UTF-8")))
@@ -20,7 +20,7 @@
 
 (configure-root-page :component "root")
 
-(define-component carousel-app ()
+(define-component carousel-app (&key &allow-other-keys)
   (let-component-state ((current-index 0))
     (let-function ((next () (setf current-index (mod (1+ current-index) 5)))
                    (prev () (setf current-index (mod (+ current-index 4) 5))))

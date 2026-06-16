@@ -14,49 +14,49 @@
 
 (deftest test-impl-list
   (testing "no filter returns all 8 implementations"
-    (let* ((result (test-render-component "impl-list" :args '(nil)))
+    (let* ((result (test-render-component "impl-list" :args '(:filter nil)))
            (ul (find-tag :ul (getf result :sexp))))
       (ok (= 8 (length (cdr ul))))))
 
   (testing "empty string filter returns all 8 implementations"
-    (let* ((result (test-render-component "impl-list" :args '("")))
+    (let* ((result (test-render-component "impl-list" :args '(:filter "")))
            (ul (find-tag :ul (getf result :sexp))))
       (ok (= 8 (length (cdr ul))))))
 
   (testing "filter by name narrows results"
     ;; "Clozure" appears only in CCL's name/description
-    (let* ((result (test-render-component "impl-list" :args '("Clozure")))
+    (let* ((result (test-render-component "impl-list" :args '(:filter "Clozure")))
            (ul (find-tag :ul (getf result :sexp))))
       (ok (= 1 (length (cdr ul))))))
 
   (testing "filter by license returns matching implementations"
-    (let* ((result (test-render-component "impl-list" :args '("MIT")))
+    (let* ((result (test-render-component "impl-list" :args '(:filter "MIT")))
            (ul (find-tag :ul (getf result :sexp))))
       (ok (>= (length (cdr ul)) 1))))
 
   (testing "filter paragraph appears when filter is active"
-    (let* ((result (test-render-component "impl-list" :args '("SBCL")))
+    (let* ((result (test-render-component "impl-list" :args '(:filter "SBCL")))
            (sexp (getf result :sexp)))
       (ok (find-tag :p sexp))))
 
   (testing "no filter paragraph when filter is nil"
-    (let* ((result (test-render-component "impl-list" :args '(nil)))
+    (let* ((result (test-render-component "impl-list" :args '(:filter nil)))
            (sexp (getf result :sexp)))
       (ok (null (find-tag :p sexp))))))
 
 (deftest test-impl-detail
   (testing "valid id renders implementation name in h1"
-    (let* ((result (test-render-component "impl-detail" :args '(1)))
+    (let* ((result (test-render-component "impl-detail" :args '(:id 1)))
            (sexp (getf result :sexp)))
       (ok (equal '(:h1 "SBCL") (find-tag :h1 sexp)))))
 
   (testing "another valid id renders correct name"
-    (let* ((result (test-render-component "impl-detail" :args '(2)))
+    (let* ((result (test-render-component "impl-detail" :args '(:id 2)))
            (sexp (getf result :sexp)))
       (ok (equal '(:h1 "CCL") (find-tag :h1 sexp)))))
 
   (testing "invalid id renders not-found message"
-    (let* ((result (test-render-component "impl-detail" :args '(999)))
+    (let* ((result (test-render-component "impl-detail" :args '(:id 999)))
            (sexp (getf result :sexp)))
       (ok (equal '(:h1 "Implementation not found") (find-tag :h1 sexp))))))
 

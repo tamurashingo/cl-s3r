@@ -30,10 +30,11 @@
 
 (defmacro define-metadata (name args &body body)
   "Register a metadata-generating function for a component.
-ARGS matches the component's props. BODY returns a plist like (:title \"...\") or nil."
+ARGS is a keyword-argument lambda list like (&key id title &allow-other-keys).
+BODY returns a plist like (:title \"...\") or nil."
   (let ((component-name (string-downcase (string name))))
     `(setf (gethash ,component-name *metadata-registry*)
-           (lambda (&key ,@args &allow-other-keys)
+           (lambda ,args
              ,@body))))
 
 (defun call-metadata (component-name props)
@@ -104,16 +105,16 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
 
 (defun call-component-action (component-name action-name args current-state)
   (let* ((comp-info (gethash (string-downcase (string component-name)) *component-registry*))
-         (func-name (getf comp-info :name))
-         (comp-args (getf comp-info :args)))
+         (func-name (getf comp-info :name)))
     (if func-name
         (let ((*current-component-state* current-state)
               (*current-component-functions* nil)
               (*sync-component-state* nil))
 
-          ;; Dry-run to populate *current-component-functions* via let-function
+          ;; Dry-run with no args to populate *current-component-functions* via let-function.
+          ;; State is already in *current-component-state*; all keyword args default to nil.
           (labels ((run-comp ()
-                     (apply (symbol-function func-name) (loop for arg in comp-args collect nil))))
+                     (funcall (symbol-function func-name))))
 
             ;; Run component to register action functions
             (run-comp)
@@ -157,7 +158,8 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
     (t value)))
 
 (defun expand-child-component (tag rest)
-  "Expand a child component S-expression call into an HTML string."
+  "Expand a child component S-expression call into an HTML string.
+Converts (@ (key val) ...) attributes to a keyword plist and applies them as keyword args."
   (let* ((attrs (when (and rest
                            (listp (car rest))
                            (symbolp (caar rest))
@@ -165,13 +167,9 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
                   (cdar rest)))
          (props-plist (loop for (k v) in attrs
                             append (list (make-keyword (string-upcase (string k))) v)))
-         (comp-info (gethash (string-downcase (string tag)) *component-registry*))
-         (comp-args (getf comp-info :args))
-         (arg-values (loop for arg in comp-args
-                           collect (getf props-plist
-                                        (make-keyword (string-upcase (string arg)))))))
+         (comp-info (gethash (string-downcase (string tag)) *component-registry*)))
     (if comp-info
-        (render-html (apply #'render-component tag nil arg-values))
+        (render-html (apply #'render-component tag nil props-plist))
         (error "Unknown component: ~A" tag))))
 
 (defun render-component-html (name state &rest args)

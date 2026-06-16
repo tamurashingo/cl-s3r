@@ -10,7 +10,7 @@
 
 (in-package #:cl-s3r.sample.counter)
 
-(define-component root (children)
+(define-component root (&key children &allow-other-keys)
   `(:html (@ (lang "ja"))
      (:head
        (:meta (@ (charset "UTF-8")))
@@ -21,7 +21,7 @@
 (configure-root-page :component "root")
 
 ;; カウンタコンポーネントの定義
-(define-component counter-app (initial-count)
+(define-component counter-app (&key initial-count &allow-other-keys)
   (let-component-state ((count initial-count))
     (let-function ((increment () (incf count))
                    (decrement () (decf count)))

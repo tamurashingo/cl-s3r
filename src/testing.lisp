@@ -36,47 +36,37 @@
             sexp))
       sexp))
 
-(defun pad-args (args comp-args)
-  "Pad or trim args to match the length of comp-args, filling with nil."
-  (let ((n (length comp-args)))
-    (cond
-      ((= (length args) n) args)
-      ((> (length args) n) (subseq args 0 n))
-      (t (append args (make-list (- n (length args))))))))
-
 (defun test-render-component (component-name &key args (initial-state nil))
-  "Run component-name with ARGS under INITIAL-STATE.
+  "Run component-name with ARGS (a keyword plist) under INITIAL-STATE.
 Returns a plist with :SEXP (metadata stripped), :RAW-SEXP (as-is), and :STATE."
   (let* ((name-str (string-downcase (string component-name)))
          (comp-info (gethash name-str *component-registry*))
-         (func-name (getf comp-info :name))
-         (comp-args (getf comp-info :args)))
+         (func-name (getf comp-info :name)))
     (unless func-name
       (error "cl-s3r.testing: component ~S not found" component-name))
     (let ((*current-component-state* (copy-list initial-state))
           (*current-component-functions* nil)
           (*sync-component-state* nil))
-      (let ((raw-sexp (apply (symbol-function func-name)
-                             (pad-args args comp-args))))
+      (let ((raw-sexp (apply (symbol-function func-name) args)))
         (list :sexp     (strip-component-metadata raw-sexp)
               :raw-sexp raw-sexp
               :state    (copy-list *current-component-state*))))))
 
 (defun test-call-action (component-name action-name &key state args action-args)
-  "Execute ACTION-NAME on COMPONENT-NAME with the given STATE and ARGS.
+  "Execute ACTION-NAME on COMPONENT-NAME with the given STATE and ARGS (a keyword plist).
 Uses a two-phase approach (dry-run + re-render) matching call-component-action.
 Returns a plist with :SEXP (metadata stripped), :RAW-SEXP (as-is), and :STATE."
   (let* ((name-str (string-downcase (string component-name)))
          (comp-info (gethash name-str *component-registry*))
-         (func-name (getf comp-info :name))
-         (comp-args (getf comp-info :args)))
+         (func-name (getf comp-info :name)))
     (unless func-name
       (error "cl-s3r.testing: component ~S not found" component-name))
     (let ((*current-component-state* (copy-list state))
           (*current-component-functions* nil)
           (*sync-component-state* nil))
-      ;; Phase 1: dry-run with nil args to populate *current-component-functions*
-      (apply (symbol-function func-name) (make-list (length comp-args)))
+      ;; Phase 1: dry-run with no args to populate *current-component-functions*.
+      ;; State is already in *current-component-state*; all keyword args default to nil.
+      (funcall (symbol-function func-name))
       ;; Find and execute the action
       (let ((action-fn (cdr (assoc (string-downcase (string action-name))
                                    *current-component-functions*
@@ -91,8 +81,7 @@ Returns a plist with :SEXP (metadata stripped), :RAW-SEXP (as-is), and :STATE."
       ;; Phase 2: re-render with updated state, reset function registry
       (let ((*current-component-functions* nil)
             (*sync-component-state* nil))
-        (let ((raw-sexp (apply (symbol-function func-name)
-                               (pad-args args comp-args))))
+        (let ((raw-sexp (apply (symbol-function func-name) args)))
           (list :sexp     (strip-component-metadata raw-sexp)
                 :raw-sexp raw-sexp
                 :state    (copy-list *current-component-state*)))))))
