@@ -7,11 +7,10 @@
                 #:define-component
                 #:let-component-state
                 #:let-function)
-  (:import-from #:cl-s3r.cookie
-                #:get-cookie
-                #:get-cookie-from-env
-                #:set-response-cookie
-                #:delete-response-cookie))
+  (:import-from #:cl-s3r.session
+                #:get-session
+                #:set-session
+                #:destroy-session))
 
 (in-package #:cl-s3r.sample.login)
 
@@ -22,15 +21,9 @@
     ("jiro"   . "password2")
     ("saburo" . "password3")))
 
-;;; last login time per user (universal-time integer)
-(defvar *last-login-times* (make-hash-table :test 'equal))
-
 (defun valid-credentials-p (username password)
   (let ((stored (cdr (assoc username *users* :test #'string=))))
     (and stored (string= stored password))))
-
-(defun update-last-login (username)
-  (setf (gethash username *last-login-times*) (get-universal-time)))
 
 (defun format-datetime (universal-time)
   (multiple-value-bind (sec min hour day month year)
@@ -41,7 +34,8 @@
 ;;; --- root component ---
 
 (define-component root (&key children &allow-other-keys)
-  (let ((session (get-cookie "session")))
+  (let* ((session (get-session :username))
+         (username (getf session :username)))
     `(:html (@ (lang "ja"))
        (:head
          (:meta (@ (charset "UTF-8")))
@@ -49,7 +43,7 @@
        (:body
          (:nav
            (:a (@ (href "/")) "Home")
-           ,@(when session
+           ,@(when username
                '(" | " (:a (@ (href "/detail")) "Detail"))))
          (:main ,children)))))
 
@@ -66,21 +60,22 @@
                  (password (getf form-data :|password|)))
              (if (valid-credentials-p username password)
                  (progn
-                   (update-last-login username)
-                   (set-response-cookie "session" username :http-only t :path "/")
+                   (set-session (list :username username
+                                      :last-login (get-universal-time)))
                    (setf redirect t))
                  (setf error-msg "Invalid username or password"))))
          (do-logout ()
-           (delete-response-cookie "session" :path "/")
+           (destroy-session)
            (setf redirect t)))
       (if redirect
           ;; redirect after login/logout via client-side navigation
           `(:div (@ (data-redirect "/")))
-          (let ((session (get-cookie "session")))
-            (if session
+          (let* ((session (get-session :username))
+                 (username (getf session :username)))
+            (if username
                 ;; logged in
                 `(:div
-                   (:h2 ,(format nil "Welcome, ~A!" session))
+                   (:h2 ,(format nil "Welcome, ~A!" username))
                    (:p "You are logged in.")
                    (:button (@ (onclick (do-logout))) "Logout"))
                 ;; not logged in: show login form
@@ -104,18 +99,21 @@
 ;;; --- route guard ---
 
 (defun require-auth (env)
-  "Guard function: redirect to / when no valid session cookie is present."
-  (unless (get-cookie-from-env env "session")
-    "/"))
+  "Guard function: redirect to / when no valid session is present."
+  (declare (ignore env))
+  (let* ((session (get-session :username))
+         (username (getf session :username)))
+    (unless username "/")))
 
 ;;; --- detail page (/detail) ---
 
 (define-component detail-page (&key &allow-other-keys)
-  (let* ((session (get-cookie "session"))
-         (last-login (gethash session *last-login-times*)))
+  (let* ((session (get-session :username :last-login))
+         (username (getf session :username))
+         (last-login (getf session :last-login)))
     `(:div
        (:h2 "Detail")
-       (:p (:strong "Username: ") ,session)
+       (:p (:strong "Username: ") ,username)
        (:p (:strong "Last Login: ")
            ,(if last-login
                 (format-datetime last-login)
