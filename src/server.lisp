@@ -30,13 +30,16 @@
   (setf *root-component* component))
 
 (defun configure-route (&key path (prefix nil) component props path-param
-                              (target "#root"))
+                              (target "#root") guard)
+  "Register a route. GUARD is an optional function (env) => nil-or-redirect-path.
+When GUARD returns a non-nil string, the server responds with HTTP 302 to that path."
   (let ((effective-path (or path prefix "/")))
     (setf (gethash effective-path *route-registry*)
           (list :component component
                 :props props
                 :path-param path-param
-                :target target))))
+                :target target
+                :guard guard))))
 
 (defun configure-mount (&key (target "#root") component props)
   (configure-route :path "/" :component component :props props :target target))
@@ -243,19 +246,28 @@
                                        (string= effective-subpath "")))
                               (if (and path-param-key (null param-value))
                                   '(404 (:content-type "text/plain") ("Missing path parameter"))
-                                  (let* ((qs (getf env :query-string))
-                                         (has-qs (and qs (not (string= qs ""))))
-                                         (app-js-url (if has-qs
-                                                         (format nil "~A/app.js?~A" api-prefix qs)
-                                                         (format nil "~A/app.js" api-prefix)))
-                                         (meta-props (append (getf config :props)
-                                                             (when (and path-param-key param-value)
-                                                               (list path-param-key
-                                                                     (parse-param-value param-value)))
-                                                             (parse-query-string qs)))
-                                         (metadata (call-metadata (getf config :component) meta-props)))
-                                    `(200 (:content-type "text/html")
-                                          (,(render-root-html app-js-url :metadata metadata))))))
+                                  (let ((guard-fn (getf config :guard)))
+                                    (if guard-fn
+                                        (let ((redirect-path (funcall guard-fn env)))
+                                          (when redirect-path
+                                            (return-from app
+                                              `(302 (:location ,redirect-path
+                                                     :content-type "text/plain")
+                                                    ("")))))
+                                        nil)
+                                    (let* ((qs (getf env :query-string))
+                                           (has-qs (and qs (not (string= qs ""))))
+                                           (app-js-url (if has-qs
+                                                           (format nil "~A/app.js?~A" api-prefix qs)
+                                                           (format nil "~A/app.js" api-prefix)))
+                                           (meta-props (append (getf config :props)
+                                                               (when (and path-param-key param-value)
+                                                                 (list path-param-key
+                                                                       (parse-param-value param-value)))
+                                                               (parse-query-string qs)))
+                                           (metadata (call-metadata (getf config :component) meta-props)))
+                                      `(200 (:content-type "text/html")
+                                            (,(render-root-html app-js-url :metadata metadata)))))))
 
                              ;; Dynamically generated app.js
                              ((and (eq method :get) (string= effective-subpath "/app.js"))

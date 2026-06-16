@@ -143,16 +143,37 @@
           (ok (= 0 (getf cookie :max-age))))
         (ok (redirect-sexp-p (getf r2 :sexp)))))))
 
+;;; ---- require-auth guard ----
+
+(defun make-env-with-cookies (cookie-string)
+  "Build a minimal Clack env plist with the given cookie header string."
+  (let ((headers (make-hash-table :test 'equal)))
+    (when cookie-string
+      (setf (gethash "cookie" headers) cookie-string))
+    (list :headers headers)))
+
+(deftest test-require-auth
+  (testing "redirects to / when no cookie header"
+    (let ((env (make-env-with-cookies nil)))
+      (ok (string= "/" (cl-s3r.sample.login::require-auth env)))))
+
+  (testing "redirects to / when session cookie is absent"
+    (let ((env (make-env-with-cookies "other=value")))
+      (ok (string= "/" (cl-s3r.sample.login::require-auth env)))))
+
+  (testing "returns nil (passes) when session cookie is present"
+    (let ((env (make-env-with-cookies "session=taro")))
+      (ok (null (cl-s3r.sample.login::require-auth env)))))
+
+  (testing "returns nil for any non-empty session value"
+    (dolist (user '("taro" "jiro" "saburo"))
+      (let ((env (make-env-with-cookies (format nil "session=~A" user))))
+        (ok (null (cl-s3r.sample.login::require-auth env))
+            (format nil "~A should pass guard" user))))))
+
 ;;; ---- detail-page ----
 
 (deftest test-detail-page
-  (testing "shows redirect script when not logged in"
-    (let ((*current-cookies* nil)
-          (*pending-cookie-changes* nil))
-      (let* ((result (test-render-component "detail-page" :args '()))
-             (sexp   (getf result :sexp)))
-        (ok (redirect-sexp-p sexp)))))
-
   (testing "shows username when logged in"
     (let ((*current-cookies* '(("session" . "saburo")))
           (*pending-cookie-changes* nil))
