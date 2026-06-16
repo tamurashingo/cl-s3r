@@ -1,0 +1,71 @@
+services:
+  counter:
+    build:
+      context: ../
+      dockerfile: sample/01-counter/Dockerfile
+    environment:
+      PORT: "5001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
+  todo:
+    build:
+      context: ../
+      dockerfile: sample/02-todo/Dockerfile
+    environment:
+      PORT: "5002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
+  books:
+    build:
+      context: ../
+      dockerfile: sample/03-books/Dockerfile
+    environment:
+      PORT: "5003"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
+  login:
+    build:
+      context: ../
+      dockerfile: sample/04-login/Dockerfile
+    environment:
+      PORT: "5004"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5004/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
+  playwright:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      counter:
+        condition: service_healthy
+      todo:
+        condition: service_healthy
+      books:
+        condition: service_healthy
+      login:
+        condition: service_healthy
+    environment:
+      COUNTER_URL: "http://counter:5001"
+      TODO_URL: "http://todo:5002"
+      BOOKS_URL: "http://books:5003"
+      LOGIN_URL: "http://login:5004"

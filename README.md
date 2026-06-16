@@ -566,7 +566,7 @@ To stop any sample:
 make down
 ```
 
-### Running Sample Tests
+### Running Sample Tests (Rove unit tests)
 
 Each sample has a `make test` target. It uses the pre-built Docker image but mounts the current source tree, so tests always run against the latest code without rebuilding the image.
 
@@ -579,12 +579,44 @@ cd sample/04-login   && make test
 
 `make image` must have been run at least once before running tests.
 
+### E2E Tests (Playwright)
+
+The `e2e/` directory contains Playwright tests that start all four sample apps and run browser-level interaction tests against them inside Docker.
+
+```sh
+cd e2e
+make image   # build all sample images + the Playwright runner image
+make test    # start samples, wait for health checks, then run all tests
+make clean   # stop containers and remove images
+```
+
+The `make test` command uses `docker compose run --rm playwright`, which automatically starts the four sample containers as dependencies and waits for their health checks to pass before launching the tests.
+
+**Test coverage:**
+
+| File | Sample | What is tested |
+|---|---|---|
+| `tests/01-counter.spec.js` | Counter (5001) | Initial count, increment, decrement, multiple clicks |
+| `tests/02-todo.spec.js` | Todo (5002) | Add, toggle done/undone, delete, multiple items |
+| `tests/03-books.spec.js` | Books (5003) | Full list, search filter, empty result, detail page, back navigation |
+| `tests/04-login.spec.js` | Login (5004) | Login form, invalid credentials, valid login, logout, unauthenticated redirect |
+
+The tests can also be run against locally running sample apps without Docker by setting environment variables:
+
+```sh
+COUNTER_URL=http://localhost:5001 \
+TODO_URL=http://localhost:5002 \
+BOOKS_URL=http://localhost:5003 \
+LOGIN_URL=http://localhost:5004 \
+npx playwright test
+```
+
 ## Project Structure
 
 ```
 cl-s3r/
   cl-s3r.asd              -- System definition
-  ros/
+  roswell/
     s3rup.ros              -- Roswell script: s3rup <app.asd>
   src/
     renderer.lisp          -- S-expression to HTML converter
@@ -636,6 +668,17 @@ cl-s3r/
       Dockerfile
       docker-compose.yml   -- Port 5005
       Makefile
+  e2e/
+    Dockerfile             -- Playwright runner image (mcr.microsoft.com/playwright)
+    docker-compose.yml     -- Starts all 4 samples + playwright runner
+    Makefile               -- make image / make test / make clean
+    package.json           -- @playwright/test dependency
+    playwright.config.js   -- 4 projects, each targeting one sample via env var URL
+    tests/
+      01-counter.spec.js   -- Counter E2E tests
+      02-todo.spec.js      -- Todo E2E tests
+      03-books.spec.js     -- Books E2E tests
+      04-login.spec.js     -- Login E2E tests
 ```
 
 ## Dependencies
