@@ -7,13 +7,17 @@
                "cl-json"
                "clack"
                "lack"
-               "clack-handler-hunchentoot")
+               "clack-handler-hunchentoot"
+               "ironclad"
+               "babel"
+               "bordeaux-threads")
   :components ((:module "src"
                 :components
                 ((:file "renderer")
                  (:file "component")
                  (:file "testing")
                  (:file "cookie")
+                 (:file "session")
                  (:file "server"))))
   :description "Server Side S-expression Renderer for Stateless Component-Driven Web Frontend")
 
