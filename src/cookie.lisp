@@ -4,6 +4,7 @@
            #:*pending-cookie-changes*
            #:parse-cookies
            #:get-cookie
+           #:get-cookie-from-env
            #:set-response-cookie
            #:delete-response-cookie
            #:format-set-cookie-header
@@ -36,6 +37,13 @@
 (defun get-cookie (name)
   "Return the value of cookie NAME from the current request, or nil if absent."
   (cdr (assoc name *current-cookies* :test #'string=)))
+
+(defun get-cookie-from-env (env name)
+  "Return the value of cookie NAME from the Clack ENV, or nil if absent."
+  (let* ((headers (getf env :headers))
+         (cookie-header (when headers (gethash "cookie" headers)))
+         (cookies (parse-cookies cookie-header)))
+    (cdr (assoc name cookies :test #'string=))))
 
 (defun set-response-cookie (name value &key max-age (path "/") domain secure http-only same-site)
   "Queue a Set-Cookie header for the current response."

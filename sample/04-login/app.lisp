@@ -9,6 +9,7 @@
                 #:let-function)
   (:import-from #:cl-s3r.cookie
                 #:get-cookie
+                #:get-cookie-from-env
                 #:set-response-cookie
                 #:delete-response-cookie))
 
@@ -100,23 +101,27 @@
                  :component "home-page"
                  :props '())
 
+;;; --- route guard ---
+
+(defun require-auth (env)
+  "Guard function: redirect to / when no valid session cookie is present."
+  (unless (get-cookie-from-env env "session")
+    "/"))
+
 ;;; --- detail page (/detail) ---
 
 (define-component detail-page (&key &allow-other-keys)
-  (let ((session (get-cookie "session")))
-    (if (null session)
-        ;; not logged in: redirect to /
-        `(:div (@ (data-redirect "/")))
-        ;; logged in: show user info
-        (let ((last-login (gethash session *last-login-times*)))
-          `(:div
-             (:h2 "Detail")
-             (:p (:strong "Username: ") ,session)
-             (:p (:strong "Last Login: ")
-                 ,(if last-login
-                      (format-datetime last-login)
-                      "N/A")))))))
+  (let* ((session (get-cookie "session"))
+         (last-login (gethash session *last-login-times*)))
+    `(:div
+       (:h2 "Detail")
+       (:p (:strong "Username: ") ,session)
+       (:p (:strong "Last Login: ")
+           ,(if last-login
+                (format-datetime last-login)
+                "N/A")))))
 
 (configure-route :path "/detail"
                  :component "detail-page"
-                 :props '())
+                 :props '()
+                 :guard #'require-auth)
