@@ -13,7 +13,7 @@ ENV PATH="/root/.roswell/bin:$PATH"
 RUN ros install rove
 RUN ros run --eval '(ql:quickload :cl-s3r)' --eval '(quit)'
 
-RUN ros install /app/ros/s3rup.ros
+RUN ros install /app/roswell/s3rup.ros
 
 ENTRYPOINT []
 CMD ["s3rup", "/app/sample/05-carousel/05-carousel.asd"]

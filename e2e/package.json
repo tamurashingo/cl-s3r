@@ -1,0 +1,11 @@
+{
+  "name": "cl-s3r-e2e",
+  "version": "1.0.0",
+  "description": "Playwright E2E tests for cl-s3r samples",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.0"
+  }
+}
