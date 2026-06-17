@@ -7,6 +7,7 @@
                "cl-json"
                "clack"
                "lack"
+               "lack/middleware/static"
                "clack-handler-hunchentoot"
                "ironclad"
                "babel"

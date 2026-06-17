@@ -21,13 +21,19 @@
                 #:parse-cookies
                 #:inject-set-cookie-headers)
   (:import-from #:cl-s3r.config
-                #:getenv-integer)
+                #:getenv
+                #:getenv-integer
+                #:getenv-boolean)
+  (:import-from #:lack/middleware/static
+                #:*lack-middleware-static*)
   (:export #:start-server
            #:stop-server
            #:configure-route
            #:configure-mount
            #:configure-root-page
            #:configure-default-layout
+           #:configure-static-dir
+           #:asset-path
            #:define-error-page
            #:run-server))
 
@@ -37,6 +43,22 @@
 (defvar *route-registry* (make-hash-table :test 'equal))
 (defvar *root-component* nil)
 (defvar *default-layout* nil)
+(defvar *static-dir* nil
+  "Directory from which static files are served. Defaults to \"public/\" when nil.")
+
+(defun configure-static-dir (dir)
+  "Set the directory from which static files are served.
+DIR can be a string or pathname. When nil, defaults to \"public/\" relative to CWD.
+Has no effect when S3R_ASSET_SERVING_DISABLED=true."
+  (setf *static-dir* dir))
+
+(defun asset-path (path)
+  "Return the URL for a static asset at PATH.
+When S3R_ASSET_BASE_URL is set, prepends it to PATH; otherwise returns PATH as-is."
+  (let ((base-url (getenv "S3R_ASSET_BASE_URL")))
+    (if (and base-url (not (string= base-url "")))
+        (format nil "~A~A" (string-right-trim "/" base-url) path)
+        path)))
 
 (defun configure-root-page (&key component)
   "Deprecated. Use configure-default-layout with define-layout instead."
@@ -415,9 +437,30 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                              (t '(404 (:content-type "text/plain") ("Not Found")))))))))))))
       (inject-set-cookie-headers response))))
 
+(defun build-app ()
+  "Build the Clack app function, wrapping with static file middleware unless disabled.
+Static serving is disabled when S3R_ASSET_SERVING_DISABLED=true.
+The static root defaults to \"public/\" when *static-dir* is nil."
+  (if (getenv-boolean "S3R_ASSET_SERVING_DISABLED")
+      #'app
+      (let* ((root (uiop:ensure-directory-pathname (or *static-dir* "public/")))
+             (path-fn (lambda (path-info)
+                        (let ((relative (if (and (> (length path-info) 0)
+                                                 (char= (char path-info 0) #\/))
+                                            (subseq path-info 1)
+                                            path-info)))
+                          (when (and (not (string= relative ""))
+                                     (uiop:file-exists-p
+                                      (merge-pathnames relative root)))
+                            path-info)))))
+        (funcall lack/middleware/static:*lack-middleware-static*
+                 #'app
+                 :path path-fn
+                 :root root))))
+
 (defun start-server (&key (port 5000) (address "0.0.0.0"))
   (format t "Starting server on ~A:~A...~%" address port)
-  (setf *handler* (clack:clackup #'app :port port :address address)))
+  (setf *handler* (clack:clackup (build-app) :port port :address address)))
 
 (defun stop-server ()
   (when *handler*
