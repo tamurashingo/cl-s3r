@@ -51,6 +51,19 @@ services:
       retries: 15
       start_period: 120s
 
+  error-handling:
+    build:
+      context: ../
+      dockerfile: sample/06-error-handling/Dockerfile
+    environment:
+      PORT: "5006"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5006/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
   playwright:
     build:
       context: .
@@ -64,8 +77,11 @@ services:
         condition: service_healthy
       login:
         condition: service_healthy
+      error-handling:
+        condition: service_healthy
     environment:
       COUNTER_URL: "http://counter:5001"
       TODO_URL: "http://todo:5002"
       BOOKS_URL: "http://books:5003"
       LOGIN_URL: "http://login:5004"
+      ERROR_HANDLING_URL: "http://error-handling:5006"

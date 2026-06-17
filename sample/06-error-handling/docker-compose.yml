@@ -1,0 +1,9 @@
+services:
+  app:
+    build:
+      context: ../../
+      dockerfile: sample/06-error-handling/Dockerfile
+    ports:
+      - "${PORT:-5006}:${PORT:-5006}"
+    environment:
+      - PORT=${PORT:-5006}

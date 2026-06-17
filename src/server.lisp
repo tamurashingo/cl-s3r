@@ -5,11 +5,16 @@
   (:import-from #:cl-s3r.component
                 #:*component-registry*
                 #:*layout-registry*
+                #:*error-page-registry*
                 #:call-component-action
+                #:render-component
                 #:render-component-html
                 #:render-layout-html
                 #:normalize-state-keys
-                #:call-metadata)
+                #:call-metadata
+                #:http-error
+                #:http-error-status-code
+                #:http-error-params)
   (:import-from #:cl-s3r.cookie
                 #:*current-cookies*
                 #:*pending-cookie-changes*
@@ -23,6 +28,7 @@
            #:configure-mount
            #:configure-root-page
            #:configure-default-layout
+           #:define-error-page
            #:run-server))
 
 (in-package #:cl-s3r.server)
@@ -41,6 +47,61 @@
 LAYOUT-NAME is a symbol naming a layout defined with define-layout.
 Overridden per route via the :layout keyword in configure-route."
   (setf *default-layout* layout-name))
+
+(defmacro define-error-page (&key status component (layout :inherit))
+  "Register COMPONENT as the error page for HTTP STATUS code.
+LAYOUT controls the layout wrapping the error page:
+  :inherit (default) — use the global *default-layout*
+  nil                — no layout; render inside a minimal HTML wrapper
+  'symbol            — use this specific layout, overriding the global default"
+  `(setf (gethash ,status *error-page-registry*)
+         (list :component ,component :layout ,layout)))
+
+(defun http-status-message (code)
+  (case code
+    (400 "Bad Request")
+    (401 "Unauthorized")
+    (403 "Forbidden")
+    (404 "Not Found")
+    (408 "Request Timeout")
+    (500 "Internal Server Error")
+    (502 "Bad Gateway")
+    (503 "Service Unavailable")
+    (504 "Gateway Timeout")
+    (t "Error")))
+
+(defun generate-default-error-html (status)
+  (format nil "<!DOCTYPE html>~%<html>~%<head><meta charset=\"UTF-8\"><title>~A ~A</title></head>~%<body>~%<h1>~A ~A</h1>~%</body>~%</html>~%"
+          status (http-status-message status)
+          status (http-status-message status)))
+
+(defun render-error-response (status params)
+  "Render the error page HTML for STATUS with PARAMS keyword args.
+Looks up *error-page-registry* for a registered error page component.
+Falls back to a minimal default HTML page when no page is registered."
+  (let* ((error-page (gethash status *error-page-registry*))
+         (component-name (getf error-page :component))
+         (page-layout-setting (if error-page (getf error-page :layout) :inherit)))
+    (if component-name
+        (handler-case
+          (let* ((effective-layout
+                  (cond
+                    ((eq page-layout-setting :inherit) *default-layout*)
+                    ((null page-layout-setting) nil)
+                    (t page-layout-setting)))
+                 (html (if effective-layout
+                           (let ((comp-sexp (apply #'render-component component-name nil params)))
+                             (concatenate 'string
+                                          "<!DOCTYPE html>" (string #\newline)
+                                          (render-layout-html effective-layout :children comp-sexp)))
+                           (let ((comp-html (apply #'render-component-html component-name nil params)))
+                             (format nil "<!DOCTYPE html>~%<html><head><meta charset=\"UTF-8\"></head><body>~A</body></html>"
+                                     comp-html)))))
+            `(,status (:content-type "text/html") (,html)))
+          (error (render-err)
+            (format *error-output* "Error rendering error page for ~A: ~A~%" status render-err)
+            `(,status (:content-type "text/html") (,(generate-default-error-html status)))))
+        `(,status (:content-type "text/html") (,(generate-default-error-html status))))))
 
 (defun configure-route (&key path (prefix nil) component props path-param
                               (target "#root") guard (layout :inherit))
@@ -289,31 +350,39 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                                                      :content-type "text/plain")
                                                     ("")))))
                                         nil)
-                                    (let* ((qs (getf env :query-string))
-                                           (has-qs (and qs (not (string= qs ""))))
-                                           (app-js-url (if has-qs
-                                                           (format nil "~A/app.js?~A" api-prefix qs)
-                                                           (format nil "~A/app.js" api-prefix)))
-                                           (meta-props (append (getf config :props)
-                                                               (when (and path-param-key param-value)
-                                                                 (list path-param-key
-                                                                       (parse-param-value param-value)))
-                                                               (parse-query-string qs)))
-                                           (metadata (call-metadata (getf config :component) meta-props))
-                                           (route-layout (getf config :layout :inherit))
-                                           (explicit-no-layout
-                                            (and (not (eq route-layout :inherit))
-                                                 (null route-layout)))
-                                           (effective-layout-name
-                                            (cond
-                                              (explicit-no-layout nil)
-                                              ((eq route-layout :inherit) *default-layout*)
-                                              (t route-layout))))
-                                      `(200 (:content-type "text/html")
-                                            (,(render-root-html app-js-url
-                                                                :metadata metadata
-                                                                :layout-name effective-layout-name
-                                                                :no-layout explicit-no-layout)))))))
+                                    (handler-case
+                                      (let* ((qs (getf env :query-string))
+                                             (has-qs (and qs (not (string= qs ""))))
+                                             (app-js-url (if has-qs
+                                                             (format nil "~A/app.js?~A" api-prefix qs)
+                                                             (format nil "~A/app.js" api-prefix)))
+                                             (meta-props (append (getf config :props)
+                                                                 (when (and path-param-key param-value)
+                                                                   (list path-param-key
+                                                                         (parse-param-value param-value)))
+                                                                 (parse-query-string qs)))
+                                             (metadata (call-metadata (getf config :component) meta-props))
+                                             (route-layout (getf config :layout :inherit))
+                                             (explicit-no-layout
+                                              (and (not (eq route-layout :inherit))
+                                                   (null route-layout)))
+                                             (effective-layout-name
+                                              (cond
+                                                (explicit-no-layout nil)
+                                                ((eq route-layout :inherit) *default-layout*)
+                                                (t route-layout))))
+                                        `(200 (:content-type "text/html")
+                                              (,(render-root-html app-js-url
+                                                                  :metadata metadata
+                                                                  :layout-name effective-layout-name
+                                                                  :no-layout explicit-no-layout))))
+                                      (http-error (e)
+                                        (render-error-response
+                                         (http-error-status-code e)
+                                         (http-error-params e)))
+                                      (error (e)
+                                        (format *error-output* "Unhandled error in GET ~A: ~A~%" path e)
+                                        (render-error-response 500 (list :message (princ-to-string e))))))))
 
                              ;; Dynamically generated app.js
                              ((and (eq method :get) (string= effective-subpath "/app.js"))
@@ -327,7 +396,15 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
 
                              ;; API: Initial render
                              ((and (eq method :post) (string= effective-subpath "/api/render"))
-                              (handle-render env))
+                              (handler-case
+                                (handle-render env)
+                                (http-error (e)
+                                  (render-error-response
+                                   (http-error-status-code e)
+                                   (http-error-params e)))
+                                (error (e)
+                                  (format *error-output* "Unhandled error in /api/render: ~A~%" e)
+                                  (render-error-response 500 (list :message (princ-to-string e))))))
 
                              ;; API: Action handler
                              ((and (eq method :post) (string= effective-subpath "/action"))

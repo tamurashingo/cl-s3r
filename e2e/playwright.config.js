@@ -36,5 +36,12 @@ module.exports = defineConfig({
       },
       testMatch: '**/04-login.spec.js',
     },
+    {
+      name: 'error-handling',
+      use: {
+        baseURL: process.env.ERROR_HANDLING_URL || 'http://localhost:5006',
+      },
+      testMatch: '**/06-error-handling.spec.js',
+    },
   ],
 });
