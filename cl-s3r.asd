@@ -17,6 +17,7 @@
                  (:file "component")
                  (:file "testing")
                  (:file "cookie")
+                 (:file "config")
                  (:file "session")
                  (:file "server"))))
   :description "Server Side S-expression Renderer for Stateless Component-Driven Web Frontend")

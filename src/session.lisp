@@ -4,6 +4,8 @@
                 #:get-cookie
                 #:set-response-cookie
                 #:delete-response-cookie)
+  (:import-from #:cl-s3r.config
+                #:getenv)
   (:export #:*session-cookie-name*
            #:*session-secret*
            #:*session-timeout*
@@ -71,7 +73,7 @@ DELETE-HANDLER: (session-id) => removes the record"
 (defun ensure-session-secret ()
   "Return *session-secret*, initializing it from SESSION_SECRET env var or a random value."
   (or *session-secret*
-      (let ((env (uiop:getenv "SESSION_SECRET")))
+      (let ((env (getenv "SESSION_SECRET")))
         (setf *session-secret*
               (if (and env (not (string= env "")))
                   env

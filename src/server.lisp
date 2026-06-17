@@ -13,6 +13,8 @@
                 #:*pending-cookie-changes*
                 #:parse-cookies
                 #:inject-set-cookie-headers)
+  (:import-from #:cl-s3r.config
+                #:getenv-integer)
   (:export #:start-server
            #:stop-server
            #:configure-route
@@ -303,12 +305,9 @@ When GUARD returns a non-nil string, the server responds with HTTP 302 to that p
 
 (defun run-server (&key port)
   "Start the server and block until interrupted. Stops the server cleanly on exit.
-PORT defaults to the PORT environment variable, then 5000."
+PORT defaults to the PORT environment variable (or .env file), then 5000."
   (let ((effective-port (or port
-                            (let ((env (uiop:getenv "PORT")))
-                              (when (and env (not (string= env "")))
-                                (parse-integer env)))
-                            5000)))
+                            (getenv-integer "PORT" :default 5000))))
     (start-server :port effective-port)
     (format t "Server running on port ~A. Press Ctrl+C to stop.~%" effective-port)
     (handler-case

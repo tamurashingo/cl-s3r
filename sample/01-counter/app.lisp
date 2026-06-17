@@ -6,7 +6,9 @@
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:let-component-state
-                #:let-function))
+                #:let-function)
+  (:import-from #:cl-s3r.config
+                #:getenv-integer))
 
 (in-package #:cl-s3r.sample.counter)
 
@@ -20,7 +22,6 @@
 
 (configure-root-page :component "root")
 
-;; カウンタコンポーネントの定義
 (define-component counter-app (&key initial-count &allow-other-keys)
   (let-component-state ((count initial-count))
     (let-function ((increment () (incf count))
@@ -31,7 +32,8 @@
          (:button (@ (onclick (increment))) "+")
          (:button (@ (onclick (decrement))) "-")))))
 
-;; マウント設定
+;; INITIAL_COUNT env var controls the starting value (default: 0).
+;; Set it in .env or as an OS environment variable.
 (configure-route :path "/"
                  :component "counter-app"
-                 :props '(:initial-count 0))
+                 :props (list :initial-count (getenv-integer "INITIAL_COUNT" :default 0)))
