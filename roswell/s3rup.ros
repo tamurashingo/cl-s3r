@@ -13,16 +13,20 @@ exec ros -Q -- $0 "$@"
 
 (defun print-usage ()
   (format *error-output*
-          "Usage: s3rup [--port PORT] [-p PORT] <app.asd>~%~%~
+          "Usage: s3rup [--port PORT] [-p PORT] [--env ENV] [-e ENV] <app.asd>~%~%~
            Options:~%~
-             --port PORT, -p PORT   Port to listen on (default: PORT env var or 5000)~%~%~
+             --port PORT, -p PORT   Port to listen on (default: PORT env var or 5000)~%~
+             --env ENV,  -e ENV     Environment name for .env.<ENV> loading~%~
+                                    (default: S3R_ENV env var)~%~%~
            Example:~%~
              s3rup ./my-app.asd~%~
-             s3rup --port 8080 ./my-app.asd~%"))
+             s3rup --port 8080 ./my-app.asd~%~
+             s3rup --env prod ./my-app.asd~%"))
 
 (defun parse-args (args)
-  "Returns (values asd-file port-or-nil). Signals error on bad input."
+  "Returns (values asd-file port-or-nil env-or-nil). Signals error on bad input."
   (let ((port nil)
+        (env nil)
         (remaining args))
     (loop while remaining do
       (let ((arg (first remaining)))
@@ -34,11 +38,16 @@ exec ros -Q -- $0 "$@"
                         (error () (error "~A value must be an integer, got: ~S"
                                          arg (second remaining)))))
            (setf remaining (cddr remaining)))
+          ((or (string= arg "--env") (string= arg "-e"))
+           (unless (second remaining)
+             (error "~A requires a value" arg))
+           (setf env (second remaining))
+           (setf remaining (cddr remaining)))
           ((and (> (length arg) 0) (char= (char arg 0) #\-))
            (error "Unknown option: ~A" arg))
           (t
            (return)))))
-    (values (first remaining) port)))
+    (values (first remaining) port env)))
 
 (defun main (&rest argv)
   (when (or (null argv)
@@ -47,7 +56,7 @@ exec ros -Q -- $0 "$@"
     (print-usage)
     (uiop:quit (if (null argv) 1 0)))
 
-  (multiple-value-bind (asd-file port)
+  (multiple-value-bind (asd-file port env)
       (handler-case (parse-args argv)
         (error (e)
           (format *error-output* "Error: ~A~%" e)
@@ -65,8 +74,11 @@ exec ros -Q -- $0 "$@"
 
     ;; ASDF convention: filename = system name (my-app.asd -> "my-app")
     (let* ((asd-path (truename asd-file))
-           (system-name (pathname-name asd-path)))
+           (system-name (pathname-name asd-path))
+           (app-dir (make-pathname :defaults asd-path :name nil :type nil)))
       (asdf:load-asd asd-path)
+      ;; Load .env files before loading the app so env vars are available at load time.
+      (cl-s3r.config:load-dotenv :dir app-dir :env-name env)
       (ql:quickload system-name)
       (cl-s3r.server:run-server :port port))))
 
