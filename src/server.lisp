@@ -4,8 +4,10 @@
                 #:make-keyword)
   (:import-from #:cl-s3r.component
                 #:*component-registry*
+                #:*layout-registry*
                 #:call-component-action
                 #:render-component-html
+                #:render-layout-html
                 #:normalize-state-keys
                 #:call-metadata)
   (:import-from #:cl-s3r.cookie
@@ -20,6 +22,7 @@
            #:configure-route
            #:configure-mount
            #:configure-root-page
+           #:configure-default-layout
            #:run-server))
 
 (in-package #:cl-s3r.server)
@@ -27,21 +30,35 @@
 (defvar *handler* nil)
 (defvar *route-registry* (make-hash-table :test 'equal))
 (defvar *root-component* nil)
+(defvar *default-layout* nil)
 
 (defun configure-root-page (&key component)
+  "Deprecated. Use configure-default-layout with define-layout instead."
   (setf *root-component* component))
 
+(defun configure-default-layout (layout-name)
+  "Set the default layout applied to all routes.
+LAYOUT-NAME is a symbol naming a layout defined with define-layout.
+Overridden per route via the :layout keyword in configure-route."
+  (setf *default-layout* layout-name))
+
 (defun configure-route (&key path (prefix nil) component props path-param
-                              (target "#root") guard)
-  "Register a route. GUARD is an optional function (env) => nil-or-redirect-path.
-When GUARD returns a non-nil string, the server responds with HTTP 302 to that path."
+                              (target "#root") guard (layout :inherit))
+  "Register a route.
+GUARD is an optional function (env) => nil-or-redirect-path.
+When GUARD returns a non-nil string, the server responds with HTTP 302 to that path.
+LAYOUT controls which layout wraps the page HTML:
+  :inherit (default) — use the global *default-layout* (or *root-component* as fallback)
+  nil                — no layout; render a minimal HTML page
+  'symbol            — use this specific layout, overriding the global default"
   (let ((effective-path (or path prefix "/")))
     (setf (gethash effective-path *route-registry*)
           (list :component component
                 :props props
                 :path-param path-param
                 :target target
-                :guard guard))))
+                :guard guard
+                :layout layout))))
 
 (defun configure-mount (&key (target "#root") component props)
   (configure-route :path "/" :component component :props props :target target))
@@ -130,24 +147,39 @@ When GUARD returns a non-nil string, the server responds with HTTP 302 to that p
           "<!DOCTYPE html>~%<html>~%<head>~%  <meta charset=\"UTF-8\">~%</head>~%<body>~%  <div id=\"root\"></div>~%  <script type=\"module\" src=\"~A\"></script>~%</body>~%</html>~%"
           app-js-url))
 
-(defun render-root-html (app-js-url &key metadata)
-  (if *root-component*
-      (let* ((children '(:div (@ (id "root"))))
-             (rendered (render-component-html *root-component* nil :children children))
-             (script-tag (format nil "<script type=\"module\" src=\"~A\"></script>" app-js-url))
-             (body-close-pos (search "</body>" rendered))
-             (with-script (if body-close-pos
-                              (concatenate 'string
-                                           (subseq rendered 0 body-close-pos)
-                                           script-tag
-                                           (subseq rendered body-close-pos))
-                              (concatenate 'string rendered script-tag)))
-             (with-meta (let ((title (and metadata (getf metadata :title))))
-                          (if title
-                              (inject-title with-script title)
-                              with-script))))
-        (concatenate 'string "<!DOCTYPE html>" (string #\newline) with-meta))
-      (generate-index-html app-js-url)))
+(defun %render-with-layout (rendered app-js-url metadata)
+  "Inject the app.js script tag and optional metadata title into RENDERED html."
+  (let* ((script-tag (format nil "<script type=\"module\" src=\"~A\"></script>" app-js-url))
+         (body-close-pos (search "</body>" rendered))
+         (with-script (if body-close-pos
+                          (concatenate 'string
+                                       (subseq rendered 0 body-close-pos)
+                                       script-tag
+                                       (subseq rendered body-close-pos))
+                          (concatenate 'string rendered script-tag)))
+         (with-meta (let ((title (and metadata (getf metadata :title))))
+                      (if title
+                          (inject-title with-script title)
+                          with-script))))
+    (concatenate 'string "<!DOCTYPE html>" (string #\newline) with-meta)))
+
+(defun render-root-html (app-js-url &key metadata layout-name no-layout)
+  "Render the full page HTML.
+LAYOUT-NAME is a symbol naming a defined layout to wrap the mount div.
+NO-LAYOUT when true skips layout even if *root-component* is set (explicit :layout nil on route).
+Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOUT is nil."
+  (let ((children '(:div (@ (id "root")))))
+    (cond
+      (layout-name
+       (%render-with-layout
+        (render-layout-html layout-name :children children)
+        app-js-url metadata))
+      ((and (not no-layout) *root-component*)
+       (%render-with-layout
+        (render-component-html *root-component* nil :children children)
+        app-js-url metadata))
+      (t
+       (generate-index-html app-js-url)))))
 
 (defun generate-app-js (config &key (api-prefix "") path-param-key param-value query-params)
   (let* ((target (getf config :target))
@@ -267,9 +299,21 @@ When GUARD returns a non-nil string, the server responds with HTTP 302 to that p
                                                                  (list path-param-key
                                                                        (parse-param-value param-value)))
                                                                (parse-query-string qs)))
-                                           (metadata (call-metadata (getf config :component) meta-props)))
+                                           (metadata (call-metadata (getf config :component) meta-props))
+                                           (route-layout (getf config :layout :inherit))
+                                           (explicit-no-layout
+                                            (and (not (eq route-layout :inherit))
+                                                 (null route-layout)))
+                                           (effective-layout-name
+                                            (cond
+                                              (explicit-no-layout nil)
+                                              ((eq route-layout :inherit) *default-layout*)
+                                              (t route-layout))))
                                       `(200 (:content-type "text/html")
-                                            (,(render-root-html app-js-url :metadata metadata)))))))
+                                            (,(render-root-html app-js-url
+                                                                :metadata metadata
+                                                                :layout-name effective-layout-name
+                                                                :no-layout explicit-no-layout)))))))
 
                              ;; Dynamically generated app.js
                              ((and (eq method :get) (string= effective-subpath "/app.js"))

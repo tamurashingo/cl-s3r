@@ -9,6 +9,7 @@
            #:let-component-state
            #:let-function
            #:*component-registry*
+           #:*layout-registry*
            #:*metadata-registry*
            #:*current-component-state*
            #:*current-component-functions*
@@ -16,16 +17,21 @@
            #:call-component-action
            #:render-component
            #:render-component-html
+           #:render-layout-html
            #:normalize-state-keys
+           #:define-layout
            #:define-metadata
            #:call-metadata))
 
 (in-package #:cl-s3r.component)
 
-;; Component registry (keyed by component name)
+;; Component registry (keyed by component name string)
 (defvar *component-registry* (make-hash-table :test 'equal))
 
-;; Metadata registry (keyed by component name)
+;; Layout registry (keyed by layout name string)
+(defvar *layout-registry* (make-hash-table :test 'equal))
+
+;; Metadata registry (keyed by component name string)
 (defvar *metadata-registry* (make-hash-table :test 'equal))
 
 (defmacro define-metadata (name args &body body)
@@ -103,6 +109,18 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
        (setf (gethash ,component-name *component-registry*)
              (list :name ',name :args ',args)))))
 
+(defmacro define-layout (name args &body body)
+  "Define a stateless layout function.
+ARGS should be a keyword lambda list like (&key children &allow-other-keys).
+Unlike define-component, layouts do not inject data-state or data-component attributes.
+Layouts can receive :children as a keyword arg and may call other layouts by symbol name."
+  (let ((layout-name (string-downcase (string name))))
+    `(progn
+       (defun ,name ,args
+         ,@body)
+       (setf (gethash ,layout-name *layout-registry*)
+             (list :name ',name :args ',args)))))
+
 (defun call-component-action (component-name action-name args current-state)
   (let* ((comp-info (gethash (string-downcase (string component-name)) *component-registry*))
          (func-name (getf comp-info :name)))
@@ -158,22 +176,43 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
     (t value)))
 
 (defun expand-child-component (tag rest)
-  "Expand a child component S-expression call into an HTML string.
-Converts (@ (key val) ...) attributes to a keyword plist and applies them as keyword args."
-  (let* ((attrs (when (and rest
-                           (listp (car rest))
-                           (symbolp (caar rest))
-                           (string= (string (caar rest)) "@"))
-                  (cdar rest)))
+  "Expand a child component or layout S-expression call into an HTML string.
+For components: (tag (@ (key val) ...)) — props come from the @ attribute list.
+For layouts: (tag (@ (key val) ...) body...) — @ props plus remaining sexps become :children."
+  (let* ((has-attrs (and rest
+                         (listp (car rest))
+                         (symbolp (caar rest))
+                         (string= (string (caar rest)) "@")))
+         (attrs (when has-attrs (cdar rest)))
          (props-plist (loop for (k v) in attrs
                             append (list (make-keyword (string-upcase (string k))) v)))
-         (comp-info (gethash (string-downcase (string tag)) *component-registry*)))
-    (if comp-info
-        (render-html (apply #'render-component tag nil props-plist))
-        (error "Unknown component: ~A" tag))))
+         (comp-info (gethash (string-downcase (string tag)) *component-registry*))
+         (layout-info (gethash (string-downcase (string tag)) *layout-registry*)))
+    (cond
+      (comp-info
+       (render-html (apply #'render-component tag nil props-plist)))
+      (layout-info
+       (let* ((content-sexps (if has-attrs (cdr rest) rest))
+              (children (if (= (length content-sexps) 1)
+                            (car content-sexps)
+                            content-sexps))
+              (layout-fn (symbol-function (getf layout-info :name))))
+         (render-html (apply layout-fn :children children props-plist))))
+      (t
+       (error "Unknown component or layout: ~A" tag)))))
 
 (defun render-component-html (name state &rest args)
-  "Render a component to an HTML string, expanding nested component calls."
+  "Render a component to an HTML string, expanding nested component and layout calls."
   (let ((*component-expander* #'expand-child-component))
     (render-html (apply #'render-component name state args))))
+
+(defun render-layout-html (name &rest args)
+  "Render a layout to an HTML string, expanding nested component and layout calls.
+NAME is a symbol naming a defined layout. ARGS are keyword arguments passed to the layout."
+  (let* ((layout-info (gethash (string-downcase (string name)) *layout-registry*))
+         (func-name (getf layout-info :name)))
+    (if func-name
+        (let ((*component-expander* #'expand-child-component))
+          (render-html (apply (symbol-function func-name) args)))
+        (error "Layout ~A not found" name))))
 

@@ -2,9 +2,10 @@
   (:use #:cl)
   (:import-from #:cl-s3r.server
                 #:configure-route
-                #:configure-root-page)
+                #:configure-default-layout)
   (:import-from #:cl-s3r.component
                 #:define-component
+                #:define-layout
                 #:let-component-state
                 #:let-function)
   (:import-from #:cl-s3r.session
@@ -31,9 +32,9 @@
     (format nil "~4D-~2,'0D-~2,'0D ~2,'0D:~2,'0D:~2,'0D"
             year month day hour min sec)))
 
-;;; --- root component ---
+;;; --- app layout ---
 
-(define-component root (&key children &allow-other-keys)
+(define-layout app-layout (&key children &allow-other-keys)
   (let* ((session (get-session :username))
          (username (getf session :username)))
     `(:html (@ (lang "ja"))
@@ -47,7 +48,7 @@
                '(" | " (:a (@ (href "/detail")) "Detail"))))
          (:main ,children)))))
 
-(configure-root-page :component "root")
+(configure-default-layout 'app-layout)
 
 ;;; --- home page (/) ---
 
