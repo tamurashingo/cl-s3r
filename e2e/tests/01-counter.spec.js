@@ -35,4 +35,15 @@ test.describe('counter', () => {
     await page.click('button:has-text("-")');
     await expect(page.locator('p')).toContainText('Count: 0');
   });
+
+  test('stylesheet link is present in head', async ({ page }) => {
+    const link = page.locator('link[rel="stylesheet"]');
+    await expect(link).toHaveAttribute('href', '/styles.css');
+  });
+
+  test('static CSS file is served', async ({ request }) => {
+    const response = await request.get('/styles.css');
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toContain('text/css');
+  });
 });

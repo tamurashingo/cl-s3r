@@ -2,7 +2,9 @@
   (:use :cl)
   (:import-from #:cl-s3r.server
                 #:configure-route
-                #:configure-default-layout)
+                #:configure-default-layout
+                #:configure-static-dir
+                #:asset-path)
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:define-layout
@@ -13,11 +15,14 @@
 
 (in-package #:cl-s3r.sample.counter)
 
+(configure-static-dir (asdf:system-relative-pathname "01-counter" "public/"))
+
 (define-layout app-layout (&key children &allow-other-keys)
   `(:html (@ (lang "ja"))
      (:head
        (:meta (@ (charset "UTF-8")))
-       (:title "cl-s3r Counter"))
+       (:title "cl-s3r Counter")
+       (:link (@ (rel "stylesheet") (href ,(asset-path "/styles.css")))))
      (:body
        ,children)))
 
