@@ -20,7 +20,17 @@ export async function mount(selector, config) {
     });
 
     if (!response.ok) {
-      throw new Error(`Server responded with ${response.status}`);
+      const contentType = response.headers.get('Content-Type') || '';
+      if (contentType.includes('text/html')) {
+        const html = await response.text();
+        const parser = new DOMParser();
+        const newDoc = parser.parseFromString(html, 'text/html');
+        document.head.innerHTML = newDoc.head.innerHTML;
+        document.body.innerHTML = newDoc.body.innerHTML;
+      } else {
+        console.error(`cl-s3r mount failed: ${response.status}`);
+      }
+      return;
     }
 
     const result = await response.json();

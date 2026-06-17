@@ -11,6 +11,7 @@
            #:*component-registry*
            #:*layout-registry*
            #:*metadata-registry*
+           #:*error-page-registry*
            #:*current-component-state*
            #:*current-component-functions*
            #:*sync-component-state*
@@ -21,7 +22,11 @@
            #:normalize-state-keys
            #:define-layout
            #:define-metadata
-           #:call-metadata))
+           #:call-metadata
+           #:http-error
+           #:http-error-status-code
+           #:http-error-params
+           #:signal-http-error))
 
 (in-package #:cl-s3r.component)
 
@@ -33,6 +38,20 @@
 
 ;; Metadata registry (keyed by component name string)
 (defvar *metadata-registry* (make-hash-table :test 'equal))
+
+;; Error page registry (keyed by HTTP status code integer)
+(defvar *error-page-registry* (make-hash-table))
+
+(define-condition http-error (error)
+  ((status-code :initarg :status-code :reader http-error-status-code)
+   (params :initarg :params :initform nil :reader http-error-params))
+  (:report (lambda (c s)
+             (format s "HTTP ~A" (http-error-status-code c)))))
+
+(defun signal-http-error (code &rest params)
+  "Signal an HTTP error condition with STATUS-CODE and optional PARAMS keyword args.
+PARAMS are passed as-is to the registered error page component."
+  (error 'http-error :status-code code :params params))
 
 (defmacro define-metadata (name args &body body)
   "Register a metadata-generating function for a component.
