@@ -36,7 +36,7 @@ test.describe('books', () => {
   test('navigate to detail page', async ({ page }) => {
     await page.click('a:has-text("SBCL")');
     await page.waitForSelector('[data-component]');
-    await expect(page.locator('h1')).toContainText('SBCL');
+    await expect(page.locator('main h1')).toContainText('SBCL');
   });
 
   test('detail page shows implementation info', async ({ page }) => {
@@ -52,7 +52,7 @@ test.describe('books', () => {
     await page.waitForSelector('[data-component]');
     await page.click('a:has-text("← Back to list")');
     await page.waitForSelector('[data-component]');
-    await expect(page.locator('h1')).toContainText('Common Lisp OSS Implementations');
+    await expect(page.locator('main h1')).toContainText('Common Lisp OSS Implementations');
     await expect(page.locator('ul li')).toHaveCount(8);
   });
 });

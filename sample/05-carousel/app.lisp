@@ -2,15 +2,16 @@
   (:use :cl)
   (:import-from #:cl-s3r.server
                 #:configure-route
-                #:configure-root-page)
+                #:configure-default-layout)
   (:import-from #:cl-s3r.component
                 #:define-component
+                #:define-layout
                 #:let-component-state
                 #:let-function))
 
 (in-package #:cl-s3r.sample.carousel)
 
-(define-component root (&key children &allow-other-keys)
+(define-layout app-layout (&key children &allow-other-keys)
   `(:html (@ (lang "ja"))
      (:head
        (:meta (@ (charset "UTF-8")))
@@ -18,7 +19,7 @@
      (:body
        ,children)))
 
-(configure-root-page :component "root")
+(configure-default-layout 'app-layout)
 
 (define-component carousel-app (&key &allow-other-keys)
   (let-component-state ((current-index 0))

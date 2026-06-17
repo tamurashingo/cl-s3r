@@ -2,24 +2,56 @@
   (:use #:cl)
   (:import-from #:cl-s3r.server
                 #:configure-route
-                #:configure-root-page)
+                #:configure-default-layout)
   (:import-from #:cl-s3r.component
                 #:define-component
+                #:define-layout
                 #:let-component-state
                 #:let-function
                 #:define-metadata))
 
 (in-package #:cl-s3r.sample.books)
 
-(define-component root (&key children &allow-other-keys)
+(define-layout app-layout (&key children &allow-other-keys)
   `(:html (@ (lang "ja"))
      (:head
        (:meta (@ (charset "UTF-8")))
        (:title "Common Lisp OSS Implementations"))
      (:body
-       ,children)))
+       (:style "
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; min-height: 100vh;
+       display: flex; flex-direction: column; }
+header { background: #2c3e50; color: #fff; padding: 12px 24px;
+         display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.03em; }
+header nav a { color: #ecf0f1; text-decoration: none; font-size: 0.9rem;
+               padding: 4px 10px; border-radius: 4px; }
+header nav a:hover { background: rgba(255,255,255,0.15); }
+main { flex: 1; padding: 24px; max-width: 900px; width: 100%; margin: 0 auto; }
+footer { background: #2c3e50; color: #95a5a6; text-align: center;
+         padding: 12px 24px; font-size: 0.8rem; }
+h1 { font-size: 1.6rem; margin-bottom: 16px; color: #2c3e50; }
+ul { list-style: none; padding: 0; }
+li { background: #fff; border: 1px solid #ddd; border-radius: 6px;
+     padding: 12px 16px; margin-bottom: 10px; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+form { display: flex; gap: 8px; margin-bottom: 16px; }
+input[type=text] { flex: 1; padding: 8px 12px; border: 1px solid #ccc;
+                   border-radius: 4px; font-size: 0.95rem; }
+button[type=submit] { padding: 8px 16px; background: #2980b9; color: #fff;
+                      border: none; border-radius: 4px; cursor: pointer; font-size: 0.95rem; }
+button[type=submit]:hover { background: #1a6ea8; }
+p { margin-bottom: 8px; line-height: 1.6; }
+")
+       (:header
+         (:h1 "cl-s3r Books")
+         (:nav (:a (@ (href "/")) "Implementations")))
+       (:main ,children)
+       (:footer "Powered by cl-s3r — layout defined with define-layout"))))
 
-(configure-root-page :component "root")
+(configure-default-layout 'app-layout)
 
 (defparameter *implementations*
   '((:id 1 :name "SBCL"
