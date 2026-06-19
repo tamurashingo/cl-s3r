@@ -21,19 +21,40 @@
 
 (configure-default-layout 'app-layout)
 
-(define-component carousel-app (&key &allow-other-keys)
+;; carousel: stateful component managing its own slide position
+(define-component carousel (&key &allow-other-keys)
   (let-component-state ((current-index 0))
     (let-function ((next () (setf current-index (mod (1+ current-index) 5)))
                    (prev () (setf current-index (mod (+ current-index 4) 5))))
       (let* ((colors '("#e74c3c" "#e67e22" "#f1c40f" "#2ecc71" "#3498db"))
              (slide-labels '("Slide 1" "Slide 2" "Slide 3" "Slide 4" "Slide 5"))
              (offset (* current-index -100)))
-        `(:div (@ (class "carousel-app"))
-           (:style "
+        `(:div (@ (class "carousel"))
+           (:div (@ (class "carousel-wrapper"))
+             (:div (@ (class "carousel-track")
+                      (style ,(format nil "transform: translateX(~A%);" offset)))
+               ,@(mapcar (lambda (color label)
+                           `(:div (@ (class "carousel-item")
+                                     (style ,(format nil "background: ~A;" color)))
+                              ,label))
+                         colors slide-labels)))
+           (:div (@ (class "carousel-controls"))
+             (:button (@ (class "carousel-btn") (onclick (prev))) "<")
+             (:span (@ (class "carousel-indicator"))
+               ,(format nil "~A / 5" (1+ current-index)))
+             (:button (@ (class "carousel-btn") (onclick (next))) ">")))))))
+
+;; carousel-page: root component embedding two independent carousel instances
+(define-component carousel-page (&key &allow-other-keys)
+  `(:div (@ (class "carousel-page"))
+     (:style "
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: sans-serif; background: #1a1a2e; min-height: 100vh;
        display: flex; align-items: center; justify-content: center; }
-.carousel-app { text-align: center; }
+h2 { color: rgba(255,255,255,0.8); font-size: 1rem; text-align: center;
+     margin-bottom: 12px; letter-spacing: 0.05em; }
+.carousel-page { display: flex; flex-direction: column; gap: 48px; padding: 40px; }
+.carousel { text-align: center; }
 .carousel-wrapper { width: 560px; overflow: hidden; border-radius: 12px;
                     box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
 .carousel-track { display: flex; transition: transform 0.4s ease; }
@@ -49,20 +70,11 @@ body { font-family: sans-serif; background: #1a1a2e; min-height: 100vh;
 .carousel-btn:hover { background: rgba(255,255,255,0.3); }
 .carousel-indicator { color: rgba(255,255,255,0.7); font-size: 1.1rem; min-width: 48px; }
 ")
-           (:div (@ (class "carousel-wrapper"))
-             (:div (@ (class "carousel-track")
-                      (style ,(format nil "transform: translateX(~A%);" offset)))
-               ,@(mapcar (lambda (color label)
-                           `(:div (@ (class "carousel-item")
-                                     (style ,(format nil "background: ~A;" color)))
-                              ,label))
-                         colors slide-labels)))
-           (:div (@ (class "carousel-controls"))
-             (:button (@ (class "carousel-btn") (onclick (prev))) "<")
-             (:span (@ (class "carousel-indicator"))
-               ,(format nil "~A / 5" (1+ current-index)))
-             (:button (@ (class "carousel-btn") (onclick (next))) ">")))))))
+     (:h2 "Carousel 1")
+     (carousel)
+     (:h2 "Carousel 2")
+     (carousel)))
 
 (configure-route :path "/"
-                 :component "carousel-app"
+                 :component "carousel-page"
                  :props '())
