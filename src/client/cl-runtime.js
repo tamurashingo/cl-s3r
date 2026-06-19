@@ -144,8 +144,6 @@ export async function sendAction(action, componentElement, rootElement,
     'render-token': _renderToken
   };
 
-  console.log('Sending payload:', payload);
-
   try {
     const response = await fetch(`${apiPrefix}/action`, {
       method: 'POST',
@@ -195,8 +193,34 @@ export async function sendAction(action, componentElement, rootElement,
 }
 
 /**
+ * Find the component element that should handle the action.
+ * Walks up the component tree to find the nearest ancestor with non-empty state,
+ * skipping stateless presentational components (data-state="{}").
+ * Falls back to the root element if no stateful component is found.
+ */
+function findActionTarget(element, mountContainer) {
+  let el = element.closest('[data-component]');
+  while (el && el !== mountContainer) {
+    const stateStr = el.getAttribute('data-state');
+    let isEmpty = true;
+    if (stateStr) {
+      try {
+        const s = JSON.parse(stateStr);
+        isEmpty = !s || (typeof s === 'object' && !Array.isArray(s) && Object.keys(s).length === 0);
+      } catch (e) {
+        isEmpty = false;
+      }
+    }
+    if (!isEmpty) return el;
+    const parent = el.parentElement;
+    el = parent ? parent.closest('[data-component]') : null;
+  }
+  return mountContainer.firstElementChild;
+}
+
+/**
  * Initialize event delegation (click and submit handlers).
- * Actions are routed to the nearest ancestor component element.
+ * Actions are routed to the nearest stateful ancestor component element.
  */
 export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpired = null } = {}) {
   const mountContainer = document.querySelector(rootSelector);
@@ -206,7 +230,7 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpire
     if (!trigger) return;
     try {
       const action = JSON.parse(trigger.getAttribute('data-on-click'));
-      const owningComp = trigger.closest('[data-component]') || mountContainer.firstElementChild;
+      const owningComp = findActionTarget(trigger, mountContainer);
       const root = mountContainer.firstElementChild;
       if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
     } catch (e) {
@@ -222,7 +246,7 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpire
       const action = JSON.parse(form.getAttribute('data-on-submit'));
       const formData = Object.fromEntries(new FormData(form).entries());
       action.push(formData);
-      const owningComp = form.closest('[data-component]') || mountContainer.firstElementChild;
+      const owningComp = findActionTarget(form, mountContainer);
       const root = mountContainer.firstElementChild;
       if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
       form.reset();
