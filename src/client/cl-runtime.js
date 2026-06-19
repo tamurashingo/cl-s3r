@@ -4,6 +4,26 @@
 
 import { morphElement } from './cl-morph.js';
 
+let _renderToken = null;
+
+export function setRenderToken(token) {
+  _renderToken = token;
+}
+
+function handleTokenExpired(config) {
+  const reload = () => window.location.reload();
+  if (!config || config.mode === 'reload') {
+    reload();
+  } else if (config.mode === 'alert') {
+    alert(config.message || 'Your session has expired.');
+    reload();
+  } else if (config.mode === 'confirm') {
+    if (confirm(config.message || 'Your session has expired. Reload the page?')) {
+      reload();
+    }
+  }
+}
+
 /**
  * Recursively collect component states from the given root element.
  * @param {HTMLElement} element - The element to start traversal from
@@ -45,6 +65,12 @@ export function collectStates(element) {
     node.id = id;
   }
 
+  // Attach component-id if present
+  const componentId = element.getAttribute('data-component-id');
+  if (componentId) {
+    node['component-id'] = componentId;
+  }
+
   // Recursively collect child components
   for (const child of element.children) {
     collectChildStates(child, node.children);
@@ -63,7 +89,7 @@ function collectChildStates(element, childrenList) {
 
   if (isComponent) {
     const node = {
-      component: element.tagName.toLowerCase(),
+      component: element.getAttribute('data-component') || element.tagName.toLowerCase(),
       state: {},
       children: []
     };
@@ -82,6 +108,11 @@ function collectChildStates(element, childrenList) {
       node.id = id;
     }
 
+    const componentId = element.getAttribute('data-component-id');
+    if (componentId) {
+      node['component-id'] = componentId;
+    }
+
     // Continue searching for nested child components
     for (const child of element.children) {
       collectChildStates(child, node.children);
@@ -98,12 +129,19 @@ function collectChildStates(element, childrenList) {
 
 /**
  * Send an action and the current state tree to the server.
+ * @param {Array} action - Action descriptor array
+ * @param {HTMLElement} componentElement - The component that owns the action
+ * @param {HTMLElement} rootElement - The root component element (for state collection)
+ * @param {Object} options
  */
-export async function sendAction(action, rootElement, { apiPrefix = '' } = {}) {
+export async function sendAction(action, componentElement, rootElement,
+                                 { apiPrefix = '', tokenExpired = null } = {}) {
   const state = collectStates(rootElement);
   const payload = {
-    action, // Already in JSON array form: ["name", ...args]
-    state
+    action,
+    state,
+    'component-id': componentElement.getAttribute('data-component-id') || undefined,
+    'render-token': _renderToken
   };
 
   console.log('Sending payload:', payload);
@@ -116,6 +154,11 @@ export async function sendAction(action, rootElement, { apiPrefix = '' } = {}) {
       },
       body: JSON.stringify(payload)
     });
+
+    if (response.status === 409) {
+      handleTokenExpired(tokenExpired);
+      return;
+    }
 
     if (!response.ok) throw new Error('Network response was not ok');
 
@@ -133,16 +176,16 @@ export async function sendAction(action, rootElement, { apiPrefix = '' } = {}) {
         }
       }
 
-      if (newElement && rootElement.parentNode) {
-        morphElement(rootElement, newElement);
+      if (newElement && componentElement.parentNode) {
+        morphElement(componentElement, newElement);
         if (result.state) {
-          rootElement.setAttribute('data-state', JSON.stringify(result.state));
+          componentElement.setAttribute('data-state', JSON.stringify(result.state));
         }
       } else {
-        // Fallback: rootElement detached from DOM
-        rootElement.innerHTML = result.html;
+        // Fallback: componentElement detached from DOM
+        componentElement.innerHTML = result.html;
         if (result.state) {
-          rootElement.setAttribute('data-state', JSON.stringify(result.state));
+          componentElement.setAttribute('data-state', JSON.stringify(result.state));
         }
       }
     }
@@ -153,9 +196,9 @@ export async function sendAction(action, rootElement, { apiPrefix = '' } = {}) {
 
 /**
  * Initialize event delegation (click and submit handlers).
- * All actions route to the root component (direct child of mount container).
+ * Actions are routed to the nearest ancestor component element.
  */
-export function initRuntime(rootSelector = 'body', { apiPrefix = '' } = {}) {
+export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpired = null } = {}) {
   const mountContainer = document.querySelector(rootSelector);
 
   mountContainer.addEventListener('click', (event) => {
@@ -163,8 +206,9 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '' } = {}) {
     if (!trigger) return;
     try {
       const action = JSON.parse(trigger.getAttribute('data-on-click'));
+      const owningComp = trigger.closest('[data-component]') || mountContainer.firstElementChild;
       const root = mountContainer.firstElementChild;
-      if (root) sendAction(action, root, { apiPrefix });
+      if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
     } catch (e) {
       console.error('Failed to parse action JSON:', e);
     }
@@ -178,8 +222,9 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '' } = {}) {
       const action = JSON.parse(form.getAttribute('data-on-submit'));
       const formData = Object.fromEntries(new FormData(form).entries());
       action.push(formData);
+      const owningComp = form.closest('[data-component]') || mountContainer.firstElementChild;
       const root = mountContainer.firstElementChild;
-      if (root) sendAction(action, root, { apiPrefix });
+      if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
       form.reset();
     } catch (e) {
       console.error('Failed to parse submit action JSON:', e);

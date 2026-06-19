@@ -15,6 +15,8 @@
            #:*current-component-state*
            #:*current-component-functions*
            #:*sync-component-state*
+           #:*component-render-counter*
+           #:*forced-component-id*
            #:call-component-action
            #:render-component
            #:render-component-html
@@ -74,6 +76,10 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
 (defvar *current-component-functions* nil)
 (defvar *sync-component-state* nil)
 
+;; Component instance ID tracking
+(defvar *component-render-counter* 0)
+(defvar *forced-component-id* nil)
+
 (defmacro let-function (definitions &body body)
   "Define local functions like flet, and register them in *current-component-functions*
    so they can be invoked by action name from the client."
@@ -113,16 +119,32 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
        (defun ,name ,args
          (let ((result (progn ,@body)))
            (if (and (listp result) (keywordp (car result)))
-               (let ((tag (car result))
-                     (rest (cdr result))
-                     (state-json (if *current-component-state*
-                                     (jonathan:to-json *current-component-state*)
-                                     "{}")))
-                 (if (and (listp (car rest))
-                          (symbolp (caar rest))
-                          (string= (string (caar rest)) "@"))
-                     `(,tag (@ (data-state ,state-json) (data-component ,(string ,component-name)) ,@(cdar rest)) ,@(cdr rest))
-                     `(,tag (@ (data-state ,state-json) (data-component ,(string ,component-name))) ,@rest)))
+               (let* ((tag (car result))
+                      (rest (cdr result))
+                      (state-json (if *current-component-state*
+                                      (jonathan:to-json *current-component-state*)
+                                      "{}"))
+                      (has-attrs (and (listp (car rest))
+                                      (symbolp (caar rest))
+                                      (string= (string (caar rest)) "@")))
+                      (component-id
+                       (or *forced-component-id*
+                           (when has-attrs
+                             (second (assoc "id" (cdar rest)
+                                            :test (lambda (a b)
+                                                    (string= a (string-downcase (string b)))))))
+                           (format nil "~A-~A" ,component-name
+                                   (incf *component-render-counter*)))))
+                 (if has-attrs
+                     `(,tag (@ (data-state ,state-json)
+                               (data-component ,(string ,component-name))
+                               (data-component-id ,component-id)
+                               ,@(cdar rest))
+                            ,@(cdr rest))
+                     `(,tag (@ (data-state ,state-json)
+                               (data-component ,(string ,component-name))
+                               (data-component-id ,component-id))
+                            ,@rest)))
                result)))
 
        (setf (gethash ,component-name *component-registry*)
@@ -140,7 +162,8 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
        (setf (gethash ,layout-name *layout-registry*)
              (list :name ',name :args ',args)))))
 
-(defun call-component-action (component-name action-name args current-state)
+(defun call-component-action (component-name action-name args current-state
+                             &key forced-component-id)
   (let* ((comp-info (gethash (string-downcase (string component-name)) *component-registry*))
          (func-name (getf comp-info :name)))
     (if func-name
@@ -168,9 +191,11 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
                   (format t "Warning: Action ~A not found in component ~A (Available: ~S)~%"
                           action-name component-name (mapcar #'car *current-component-functions*))))
 
-            ;; Re-render with the updated state, expanding nested components
+            ;; Re-render with updated state, preserving component ID
             (let ((final-html
-                   (let ((*component-expander* #'expand-child-component))
+                   (let ((*component-render-counter* 0)
+                         (*forced-component-id* forced-component-id)
+                         (*component-expander* #'expand-child-component))
                      (render-html (run-comp)))))
               (list :html final-html :state *current-component-state*))))
         (error "Component ~A not found" component-name))))
@@ -222,7 +247,9 @@ For layouts: (tag (@ (key val) ...) body...) — @ props plus remaining sexps be
 
 (defun render-component-html (name state &rest args)
   "Render a component to an HTML string, expanding nested component and layout calls."
-  (let ((*component-expander* #'expand-child-component))
+  (let ((*component-render-counter* 0)
+        (*forced-component-id* nil)
+        (*component-expander* #'expand-child-component))
     (render-html (apply #'render-component name state args))))
 
 (defun render-layout-html (name &rest args)

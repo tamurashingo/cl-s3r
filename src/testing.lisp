@@ -6,7 +6,9 @@
                 #:*component-registry*
                 #:*current-component-state*
                 #:*current-component-functions*
-                #:*sync-component-state*)
+                #:*sync-component-state*
+                #:*component-render-counter*
+                #:*forced-component-id*)
   (:export #:test-render-component
            #:test-call-action
            #:test-get-state))
@@ -27,7 +29,7 @@
                    (filtered (remove-if
                                (lambda (attr)
                                  (member (string-downcase (string (car attr)))
-                                         '("data-state" "data-component")
+                                         '("data-state" "data-component" "data-component-id")
                                          :test #'string=))
                                attrs)))
               (if filtered
@@ -46,7 +48,9 @@ Returns a plist with :SEXP (metadata stripped), :RAW-SEXP (as-is), and :STATE."
       (error "cl-s3r.testing: component ~S not found" component-name))
     (let ((*current-component-state* (copy-list initial-state))
           (*current-component-functions* nil)
-          (*sync-component-state* nil))
+          (*sync-component-state* nil)
+          (*component-render-counter* 0)
+          (*forced-component-id* nil))
       (let ((raw-sexp (apply (symbol-function func-name) args)))
         (list :sexp     (strip-component-metadata raw-sexp)
               :raw-sexp raw-sexp
@@ -63,7 +67,9 @@ Returns a plist with :SEXP (metadata stripped), :RAW-SEXP (as-is), and :STATE."
       (error "cl-s3r.testing: component ~S not found" component-name))
     (let ((*current-component-state* (copy-list state))
           (*current-component-functions* nil)
-          (*sync-component-state* nil))
+          (*sync-component-state* nil)
+          (*component-render-counter* 0)
+          (*forced-component-id* nil))
       ;; Phase 1: dry-run with no args to populate *current-component-functions*.
       ;; State is already in *current-component-state*; all keyword args default to nil.
       (funcall (symbol-function func-name))

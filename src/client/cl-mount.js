@@ -1,4 +1,4 @@
-import { initRuntime } from './cl-runtime.js';
+import { initRuntime, setRenderToken } from './cl-runtime.js';
 
 export async function mount(selector, config) {
   const target = document.querySelector(selector);
@@ -34,6 +34,9 @@ export async function mount(selector, config) {
     }
 
     const result = await response.json();
+    if (result['render-token']) {
+      setRenderToken(result['render-token']);
+    }
     if (result.html) {
       target.innerHTML = result.html;
       const rootEl = target.firstElementChild;
@@ -46,7 +49,7 @@ export async function mount(selector, config) {
       }
     }
 
-    initRuntime(selector, { apiPrefix });
+    initRuntime(selector, { apiPrefix, tokenExpired: config.tokenExpired });
   } catch (error) {
     console.error('cl-s3r mount failed:', error);
   }

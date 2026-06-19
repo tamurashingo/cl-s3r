@@ -33,6 +33,7 @@
            #:configure-root-page
            #:configure-default-layout
            #:configure-static-dir
+           #:configure-token-expired-behavior
            #:asset-path
            #:define-error-page
            #:run-server))
@@ -45,6 +46,67 @@
 (defvar *default-layout* nil)
 (defvar *static-dir* nil
   "Directory from which static files are served. Defaults to \"public/\" when nil.")
+(defvar *token-expired-mode* :reload
+  "Global 409 behavior: :reload, :alert, or :confirm.")
+(defvar *token-expired-message* nil
+  "Optional dialog message for :alert and :confirm token-expired modes.")
+
+(defvar *server-start-time* (get-universal-time)
+  "Set once at load time; used as the default deploy-id when S3R_DEPLOY_ID is absent.")
+
+(defun get-deploy-id ()
+  (or (getenv "S3R_DEPLOY_ID") (write-to-string *server-start-time*)))
+
+(defun get-secret-key ()
+  (or (getenv "S3R_SECRET_KEY") "dev-secret-key-change-in-production"))
+
+(defun generate-render-token ()
+  "Return '<timestamp>.<hex-hmac>' signed with the secret key."
+  (let* ((timestamp (get-universal-time))
+         (message (format nil "~A|~A" (get-deploy-id) timestamp))
+         (key-bytes (babel:string-to-octets (get-secret-key) :encoding :utf-8))
+         (msg-bytes (babel:string-to-octets message :encoding :utf-8))
+         (hmac (ironclad:make-hmac key-bytes :sha256)))
+    (ironclad:update-hmac hmac msg-bytes)
+    (format nil "~A.~A" timestamp
+            (ironclad:byte-array-to-hex-string (ironclad:produce-mac hmac)))))
+
+(defun validate-render-token (token &key (max-age-seconds 1800))
+  "Return T if TOKEN is valid and not older than MAX-AGE-SECONDS, NIL otherwise."
+  (when (and token (not (string= token "")))
+    (let ((dot-pos (position #\. token :from-end t)))
+      (when dot-pos
+        (let* ((ts-str (subseq token 0 dot-pos))
+               (provided-hmac (subseq token (1+ dot-pos)))
+               (timestamp (handler-case (parse-integer ts-str) (error () nil))))
+          (when timestamp
+            (let* ((message (format nil "~A|~A" (get-deploy-id) timestamp))
+                   (key-bytes (babel:string-to-octets (get-secret-key) :encoding :utf-8))
+                   (msg-bytes (babel:string-to-octets message :encoding :utf-8))
+                   (hmac (ironclad:make-hmac key-bytes :sha256)))
+              (ironclad:update-hmac hmac msg-bytes)
+              (let ((expected (ironclad:byte-array-to-hex-string
+                               (ironclad:produce-mac hmac)))
+                    (age (- (get-universal-time) timestamp)))
+                (and (string= expected provided-hmac)
+                     (<= 0 age max-age-seconds))))))))))
+
+(defun find-state-by-component-id (state-tree component-id)
+  "Recursively search STATE-TREE for the node whose component-id equals COMPONENT-ID.
+STATE-TREE uses jonathan's :|key| keyword style. Returns the node plist or NIL."
+  (when state-tree
+    (if (equal (getf state-tree :|component-id|) component-id)
+        state-tree
+        (loop for child in (getf state-tree :|children|)
+              for found = (find-state-by-component-id child component-id)
+              when found return found))))
+
+(defun configure-token-expired-behavior (mode &optional message)
+  "Set the global behavior when the client receives a 409 render-token expired response.
+MODE is one of :reload (default), :alert, or :confirm.
+MESSAGE is the dialog text shown in :alert and :confirm modes."
+  (setf *token-expired-mode* mode
+        *token-expired-message* message))
 
 (defun configure-static-dir (dir)
   "Set the directory from which static files are served.
@@ -272,9 +334,14 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                         (when (and path-param-key param-value)
                           (list path-param-key (parse-param-value param-value)))
                         query-params))
-         (props-json (if props (jonathan:to-json props) "{}")))
-    (format nil "import { mount } from '/cl-s3r.js';~%~%mount('~A', {~%  component: '~A',~%  props: ~A,~%  apiPrefix: '~A'~%});~%"
-            target component props-json api-prefix)))
+         (props-json (if props (jonathan:to-json props) "{}"))
+         (token-expired-json
+          (jonathan:to-json
+           `(:|mode| ,(string-downcase (string *token-expired-mode*))
+             ,@(when *token-expired-message*
+                 `(:|message| ,*token-expired-message*))))))
+    (format nil "import { mount } from '/cl-s3r.js';~%~%mount('~A', {~%  component: '~A',~%  props: ~A,~%  apiPrefix: '~A',~%  tokenExpired: ~A~%});~%"
+            target component props-json api-prefix token-expired-json)))
 
 (defun parse-json-body (env)
   (let ((content-length (getf env :content-length))
@@ -287,19 +354,34 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
         nil)))
 
 (defun handle-action (payload)
-  (let* ((action (getf payload :|action|))
-         (root-state-node (getf payload :|state|))
-         (component-name (getf root-state-node :|component|))
-         (current-state-raw (getf root-state-node :|state|))
-         (action-name (car action))
-         (action-args (cdr action)))
-    (let ((state-plist (normalize-state-keys
-                        (loop for (k v) on current-state-raw by #'cddr
-                              append (list (make-keyword (string-upcase (string k))) v)))))
-      (let ((result (call-component-action component-name action-name action-args state-plist)))
-        (jonathan:to-json
-         `(:|html| ,(getf result :html)
-           :|state| ,(getf result :state)))))))
+  (let* ((action              (getf payload :|action|))
+         (render-token        (getf payload :|render-token|))
+         (target-component-id (getf payload :|component-id|))
+         (root-state-node     (getf payload :|state|)))
+
+    (unless (validate-render-token render-token)
+      (return-from handle-action
+        '(409 (:content-type "application/json")
+              ("{\"error\":\"render-token expired\"}"))))
+
+    (let* ((target-node
+            (if (and target-component-id (not (string= target-component-id "")))
+                (or (find-state-by-component-id root-state-node target-component-id)
+                    root-state-node)
+                root-state-node))
+           (component-name    (getf target-node :|component|))
+           (current-state-raw (getf target-node :|state|))
+           (action-name       (car action))
+           (action-args       (cdr action)))
+      (let ((state-plist (normalize-state-keys
+                          (loop for (k v) on current-state-raw by #'cddr
+                                append (list (make-keyword (string-upcase (string k))) v)))))
+        (let ((result (call-component-action component-name action-name action-args
+                                             state-plist
+                                             :forced-component-id target-component-id)))
+          (jonathan:to-json
+           `(:|html| ,(getf result :html)
+             :|state| ,(getf result :state))))))))
 
 (defun handle-render (env)
   (let* ((payload (parse-json-body env))
@@ -308,9 +390,10 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
     ;; Convert jonathan's :|key| style to uppercase :KEY keywords
     (let ((props-plist (loop for (k v) on props-raw by #'cddr
                              nconc (list (make-keyword (string-upcase (string k))) v))))
-      (let ((html (apply #'render-component-html component-name nil props-plist)))
+      (let ((html  (apply #'render-component-html component-name nil props-plist))
+            (token (generate-render-token)))
         `(200 (:content-type "application/json")
-              (,(jonathan:to-json `(:|html| ,html))))))))
+              (,(jonathan:to-json `(:|html| ,html :|render-token| ,token))))))))
 
 (defun serve-client-js (path)
   (let* ((filename (subseq path 1))
@@ -430,9 +513,12 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
 
                              ;; API: Action handler
                              ((and (eq method :post) (string= effective-subpath "/action"))
-                              (let ((payload (parse-json-body env)))
-                                `(200 (:content-type "application/json")
-                                      (,(handle-action payload)))))
+                              (let* ((payload (parse-json-body env))
+                                     (result  (handle-action payload)))
+                                (if (listp result)
+                                    result
+                                    `(200 (:content-type "application/json")
+                                          (,result)))))
 
                              (t '(404 (:content-type "text/plain") ("Not Found")))))))))))))
       (inject-set-cookie-headers response))))
