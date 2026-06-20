@@ -1,0 +1,9 @@
+services:
+  app:
+    build:
+      context: ../../
+      dockerfile: sample/07-accordion/Dockerfile
+    ports:
+      - "${PORT:-5007}:${PORT:-5007}"
+    environment:
+      - PORT=${PORT:-5007}

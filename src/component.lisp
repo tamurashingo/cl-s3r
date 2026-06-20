@@ -17,6 +17,7 @@
            #:*sync-component-state*
            #:*component-render-counter*
            #:*forced-component-id*
+           #:*component-args-registry*
            #:call-component-action
            #:render-component
            #:render-component-html
@@ -80,6 +81,22 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
 (defvar *component-render-counter* 0)
 (defvar *forced-component-id* nil)
 
+;; Sentinel to distinguish "key not in state" from "key is nil in state".
+;; nil is a valid state value (e.g. open-items=nil means all items closed);
+;; we must not fall back to init-val when the key is explicitly nil.
+(defvar *state-unset-sentinel* (list 'unset))
+
+;; Init-args registry: populated during an initial render pass.
+;; *current-component-init-args* holds the keyword args passed to the
+;; currently-executing component function.
+;; *current-render-registry*    is a hash (component-id -> init-args) that
+;;   accumulates entries for the whole render tree; bound to a fresh hash by
+;;   handle-render, nil at all other times.
+;; *component-args-registry*    is the global store (render-token -> registry hash).
+(defvar *current-component-init-args* nil)
+(defvar *current-render-registry* nil)
+(defvar *component-args-registry* (make-hash-table :test 'equal))
+
 (defmacro let-function (definitions &body body)
   "Define local functions like flet, and register them in *current-component-functions*
    so they can be invoked by action name from the client."
@@ -95,8 +112,10 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
 (defmacro let-component-state (bindings &body body)
   (let ((vars (mapcar #'car bindings)))
     `(let* ,(loop for (var init-val) in bindings
-                  collect `(,var (let ((val (getf *current-component-state* (make-keyword (string ',var)))))
-                                   (if (not (eq val nil)) val ,init-val))))
+                  collect `(,var (let ((val (getf *current-component-state*
+                                                   (make-keyword (string ',var))
+                                                   *state-unset-sentinel*)))
+                                   (if (eq val *state-unset-sentinel*) ,init-val val))))
        ;; Initial state setup
        (unless *current-component-state* (setf *current-component-state* nil))
        ,@(loop for var in vars
@@ -135,6 +154,11 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
                                                     (string= a (string-downcase (string b)))))))
                            (format nil "~A-~A" ,component-name
                                    (incf *component-render-counter*)))))
+                 ;; Register init-args for this component instance so that
+                 ;; call-component-action can re-invoke with the same args.
+                 (when *current-render-registry*
+                   (setf (gethash component-id *current-render-registry*)
+                         *current-component-init-args*))
                  (if has-attrs
                      `(,tag (@ (data-state ,state-json)
                                (data-component ,(string ,component-name))
@@ -163,7 +187,7 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
              (list :name ',name :args ',args)))))
 
 (defun call-component-action (component-name action-name args current-state
-                             &key forced-component-id)
+                             &key forced-component-id component-init-args)
   (let* ((comp-info (gethash (string-downcase (string component-name)) *component-registry*))
          (func-name (getf comp-info :name)))
     (if func-name
@@ -171,10 +195,12 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
               (*current-component-functions* nil)
               (*sync-component-state* nil))
 
-          ;; Dry-run with no args to populate *current-component-functions* via let-function.
-          ;; State is already in *current-component-state*; all keyword args default to nil.
+          ;; Dry-run to populate *current-component-functions* via let-function.
+          ;; Pass the stored init-args so that non-state props (items, mode, etc.)
+          ;; are available and closures capture the correct values.
           (labels ((run-comp ()
-                     (funcall (symbol-function func-name))))
+                     (apply (symbol-function func-name)
+                            (or component-init-args nil))))
 
             ;; Run component to register action functions
             (run-comp)
@@ -204,7 +230,8 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
   (let* ((comp-info (gethash (string-downcase (string name)) *component-registry*))
          (func-name (getf comp-info :name)))
     (if func-name
-        (let ((*current-component-state* state))
+        (let ((*current-component-state* state)
+              (*current-component-init-args* args))
           (apply (symbol-function func-name) args))
         (error "Component ~A not found" name))))
 
@@ -234,7 +261,11 @@ For layouts: (tag (@ (key val) ...) body...) — @ props plus remaining sexps be
          (layout-info (gethash (string-downcase (string tag)) *layout-registry*)))
     (cond
       (comp-info
-       (render-html (apply #'render-component tag nil props-plist)))
+       (let ((content-sexps (if has-attrs (cdr rest) rest)))
+         (render-html (apply #'render-component tag nil
+                             (if content-sexps
+                                 (list* :children content-sexps props-plist)
+                                 props-plist)))))
       (layout-info
        (let* ((content-sexps (if has-attrs (cdr rest) rest))
               (children (if (= (length content-sexps) 1)
@@ -246,7 +277,9 @@ For layouts: (tag (@ (key val) ...) body...) — @ props plus remaining sexps be
        (error "Unknown component or layout: ~A" tag)))))
 
 (defun render-component-html (name state &rest args)
-  "Render a component to an HTML string, expanding nested component and layout calls."
+  "Render a component to an HTML string, expanding nested component and layout calls.
+If *current-render-registry* is bound to a hash by the caller (e.g. handle-render),
+each component's init-args are registered in it keyed by component-id."
   (let ((*component-render-counter* 0)
         (*forced-component-id* nil)
         (*component-expander* #'expand-child-component))
@@ -261,4 +294,3 @@ NAME is a symbol naming a defined layout. ARGS are keyword arguments passed to t
         (let ((*component-expander* #'expand-child-component))
           (render-html (apply (symbol-function func-name) args)))
         (error "Layout ~A not found" name))))
-
