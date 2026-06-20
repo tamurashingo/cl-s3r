@@ -234,7 +234,11 @@ For layouts: (tag (@ (key val) ...) body...) — @ props plus remaining sexps be
          (layout-info (gethash (string-downcase (string tag)) *layout-registry*)))
     (cond
       (comp-info
-       (render-html (apply #'render-component tag nil props-plist)))
+       (let ((content-sexps (if has-attrs (cdr rest) rest)))
+         (render-html (apply #'render-component tag nil
+                             (if content-sexps
+                                 (list* :children content-sexps props-plist)
+                                 props-plist)))))
       (layout-info
        (let* ((content-sexps (if has-attrs (cdr rest) rest))
               (children (if (= (length content-sexps) 1)
