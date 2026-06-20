@@ -79,10 +79,10 @@ Accepts either a bare accordion-item sexp or a list of them."
                     :panel  (find-dsl-child "accordion-panel"  sub-items))))))
 
 (define-component accordion (&key default mode duration items children &allow-other-keys)
-  (let-component-state ((open-items       (split-on-spaces default))
-                        (accordion-mode     (or mode "single"))
-                        (accordion-duration (or duration "0.3s"))
-                        (accordion-items    (or items (parse-accordion-children children))))
+  (let-component-state ((open-items (split-on-spaces default)))
+    (let ((accordion-mode     (or mode "single"))
+          (accordion-duration (or duration "0.3s"))
+          (accordion-items    (or items (parse-accordion-children children))))
     (let-function
         ((toggle-item (name)
            (if (string= accordion-mode "multiple")
@@ -113,4 +113,4 @@ Accepts either a bare accordion-item sexp or a list of them."
                       (:div (@ (class "accordion-panel"))
                         (:div (@ (class "accordion-panel-content"))
                           ,@(if (listp panel) panel (list panel))))))))
-             accordion-items)))))
+             accordion-items))))))

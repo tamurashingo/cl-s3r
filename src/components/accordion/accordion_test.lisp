@@ -131,50 +131,7 @@ SEXP is the stripped accordion sexp. Layout: (:div attrs (:style) item0 item1 ..
            (state  (getf result :state)))
       (ok (equal '("ccl") (test-get-state state :open-items)))))
 
-  (testing "mode is stored in state (defaults to single)"
-    (let* ((result (test-render-component "accordion"
-                                          :args (list :items (three-items))))
-           (state  (getf result :state)))
-      (ok (equal "single" (test-get-state state :accordion-mode)))))
-
-  (testing "explicit mode=multiple is stored in state"
-    (let* ((result (test-render-component "accordion"
-                                          :args (list :items (three-items)
-                                                      :mode "multiple")))
-           (state  (getf result :state)))
-      (ok (equal "multiple" (test-get-state state :accordion-mode)))))
-
-  (testing "duration is stored in state (defaults to 0.3s)"
-    (let* ((result (test-render-component "accordion"
-                                          :args (list :items (three-items))))
-           (state  (getf result :state)))
-      (ok (equal "0.3s" (test-get-state state :accordion-duration)))))
-
-  (testing "explicit duration is stored in state"
-    (let* ((result (test-render-component "accordion"
-                                          :args (list :items (three-items)
-                                                      :duration "500ms")))
-           (state  (getf result :state)))
-      (ok (equal "500ms" (test-get-state state :accordion-duration)))))
-
-  (testing "items are stored in state"
-    (let* ((result (test-render-component "accordion"
-                                          :args (list :items (three-items))))
-           (state  (getf result :state)))
-      (ok (= 3 (length (test-get-state state :accordion-items))))))
-
-  (testing "children DSL is parsed into items"
-    (let* ((result (test-render-component
-                    "accordion"
-                    :args '(:children
-                            ((accordion-item (@ (name "sbcl"))
-                               (accordion-header "SBCL")
-                               (accordion-panel "p1"))
-                             (accordion-item (@ (name "ccl"))
-                               (accordion-header "CCL")
-                               (accordion-panel "p2"))))))
-           (state  (getf result :state)))
-      (ok (= 2 (length (test-get-state state :accordion-items)))))))
+)
 
 ;;; --- toggle-item action (single mode) ---
 
@@ -183,7 +140,8 @@ SEXP is the stripped accordion sexp. Layout: (:div attrs (:style) item0 item1 ..
     (let* ((r1 (test-render-component "accordion"
                                       :args (list :items (three-items))))
            (r2 (test-call-action "accordion" "toggle-item"
-                                 :state      (getf r1 :state)
+                                 :args        (list :items (three-items))
+                                 :state       (getf r1 :state)
                                  :action-args '("sbcl"))))
       (ok (item-open-p (getf r2 :sexp) 0))
       (ok (equal '("sbcl") (test-get-state (getf r2 :state) :open-items)))))
@@ -193,7 +151,8 @@ SEXP is the stripped accordion sexp. Layout: (:div attrs (:style) item0 item1 ..
                                       :args (list :items (three-items)
                                                   :default "sbcl")))
            (r2 (test-call-action "accordion" "toggle-item"
-                                 :state      (getf r1 :state)
+                                 :args        (list :items (three-items) :default "sbcl")
+                                 :state       (getf r1 :state)
                                  :action-args '("sbcl"))))
       (ok (not (item-open-p (getf r2 :sexp) 0)))
       (ok (null (test-get-state (getf r2 :state) :open-items)))))
@@ -203,7 +162,8 @@ SEXP is the stripped accordion sexp. Layout: (:div attrs (:style) item0 item1 ..
                                       :args (list :items (three-items)
                                                   :default "sbcl")))
            (r2 (test-call-action "accordion" "toggle-item"
-                                 :state      (getf r1 :state)
+                                 :args        (list :items (three-items) :default "sbcl")
+                                 :state       (getf r1 :state)
                                  :action-args '("ccl"))))
       (ok (not (item-open-p (getf r2 :sexp) 0)))
       (ok (item-open-p     (getf r2 :sexp) 1))
@@ -214,10 +174,12 @@ SEXP is the stripped accordion sexp. Layout: (:div attrs (:style) item0 item1 ..
                                       :args (list :items (three-items)
                                                   :default "sbcl")))
            (r2 (test-call-action "accordion" "toggle-item"
-                                 :state      (getf r1 :state)
+                                 :args        (list :items (three-items) :default "sbcl")
+                                 :state       (getf r1 :state)
                                  :action-args '("sbcl")))
-           ;; Re-render using the saved state (no args — simulates state restore)
+           ;; Re-render with stored args + saved state (simulates server-side registry restore)
            (r3 (test-render-component "accordion"
+                                      :args          (list :items (three-items) :default "sbcl")
                                       :initial-state (getf r2 :state))))
       (ok (null (test-get-state (getf r3 :state) :open-items)))
       (ok (not (item-open-p (getf r3 :sexp) 0)))
@@ -233,7 +195,8 @@ SEXP is the stripped accordion sexp. Layout: (:div attrs (:style) item0 item1 ..
                                                   :default "sbcl"
                                                   :mode "multiple")))
            (r2 (test-call-action "accordion" "toggle-item"
-                                 :state      (getf r1 :state)
+                                 :args        (list :items (three-items) :default "sbcl" :mode "multiple")
+                                 :state       (getf r1 :state)
                                  :action-args '("ccl"))))
       (ok (item-open-p (getf r2 :sexp) 0))
       (ok (item-open-p (getf r2 :sexp) 1))
@@ -245,10 +208,12 @@ SEXP is the stripped accordion sexp. Layout: (:div attrs (:style) item0 item1 ..
                                                   :default "sbcl"
                                                   :mode "multiple")))
            (r2 (test-call-action "accordion" "toggle-item"
-                                 :state      (getf r1 :state)
+                                 :args        (list :items (three-items) :default "sbcl" :mode "multiple")
+                                 :state       (getf r1 :state)
                                  :action-args '("ccl")))
            (r3 (test-call-action "accordion" "toggle-item"
-                                 :state      (getf r2 :state)
+                                 :args        (list :items (three-items) :default "sbcl" :mode "multiple")
+                                 :state       (getf r2 :state)
                                  :action-args '("sbcl"))))
       (ok (not (item-open-p (getf r3 :sexp) 0)))
       (ok (item-open-p     (getf r3 :sexp) 1))

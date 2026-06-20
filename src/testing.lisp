@@ -70,9 +70,9 @@ Returns a plist with :SEXP (metadata stripped), :RAW-SEXP (as-is), and :STATE."
           (*sync-component-state* nil)
           (*component-render-counter* 0)
           (*forced-component-id* nil))
-      ;; Phase 1: dry-run with no args to populate *current-component-functions*.
-      ;; State is already in *current-component-state*; all keyword args default to nil.
-      (funcall (symbol-function func-name))
+      ;; Phase 1: dry-run with stored args to populate *current-component-functions*.
+      ;; Passing args ensures closures inside let-function capture the correct prop values.
+      (apply (symbol-function func-name) (or args nil))
       ;; Find and execute the action
       (let ((action-fn (cdr (assoc (string-downcase (string action-name))
                                    *current-component-functions*

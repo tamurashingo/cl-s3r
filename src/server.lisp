@@ -6,6 +6,8 @@
                 #:*component-registry*
                 #:*layout-registry*
                 #:*error-page-registry*
+                #:*component-args-registry*
+                #:*current-render-registry*
                 #:call-component-action
                 #:render-component
                 #:render-component-html
@@ -360,6 +362,8 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
          (root-state-node     (getf payload :|state|)))
 
     (unless (validate-render-token render-token)
+      ;; Clean up stale registry entry on token expiry.
+      (remhash render-token *component-args-registry*)
       (return-from handle-action
         '(409 (:content-type "application/json")
               ("{\"error\":\"render-token expired\"}"))))
@@ -373,12 +377,20 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
            (current-state-raw (getf target-node :|state|))
            (action-name       (car action))
            (action-args       (cdr action)))
-      (let ((state-plist (normalize-state-keys
-                          (loop for (k v) on current-state-raw by #'cddr
-                                append (list (make-keyword (string-upcase (string k))) v)))))
+      (let* ((state-plist (normalize-state-keys
+                           (loop for (k v) on current-state-raw by #'cddr
+                                 append (list (make-keyword (string-upcase (string k))) v))))
+             ;; Look up the stored init-args for this component instance.
+             (render-registry   (gethash render-token *component-args-registry*))
+             (component-init-args
+              (when (and render-registry
+                         target-component-id
+                         (not (string= target-component-id "")))
+                (gethash target-component-id render-registry))))
         (let ((result (call-component-action component-name action-name action-args
                                              state-plist
-                                             :forced-component-id target-component-id)))
+                                             :forced-component-id target-component-id
+                                             :component-init-args component-init-args)))
           (jonathan:to-json
            `(:|html| ,(getf result :html)
              :|state| ,(getf result :state))))))))
@@ -390,10 +402,15 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
     ;; Convert jonathan's :|key| style to uppercase :KEY keywords
     (let ((props-plist (loop for (k v) on props-raw by #'cddr
                              nconc (list (make-keyword (string-upcase (string k))) v))))
-      (let ((html  (apply #'render-component-html component-name nil props-plist))
-            (token (generate-render-token)))
-        `(200 (:content-type "application/json")
-              (,(jonathan:to-json `(:|html| ,html :|render-token| ,token))))))))
+      ;; Bind a fresh registry so define-component can register (component-id -> init-args)
+      ;; entries as the component tree is rendered.
+      (let ((*current-render-registry* (make-hash-table :test 'equal)))
+        (let ((html  (apply #'render-component-html component-name nil props-plist))
+              (token (generate-render-token)))
+          ;; Persist the registry so handle-action can look up init-args by token.
+          (setf (gethash token *component-args-registry*) *current-render-registry*)
+          `(200 (:content-type "application/json")
+                (,(jonathan:to-json `(:|html| ,html :|render-token| ,token)))))))))
 
 (defun serve-client-js (path)
   (let* ((filename (subseq path 1))
