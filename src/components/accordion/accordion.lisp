@@ -35,22 +35,19 @@
           finally (return (nreverse result)))))
 
 (defun find-dsl-child (tag-name items)
-  "Return the content of the first child S-expression whose car string-equals TAG-NAME.
-Returns the single content form, or a list of forms if multiple children are present."
+  "Return the body forms of the first child S-expression whose car string-equals TAG-NAME.
+Returns a list of body forms (possibly containing tags, strings, or mixed content)."
   (let ((found (find tag-name items
                      :test (lambda (name item)
                              (and (listp item)
                                   (symbolp (car item))
                                   (string-equal (string (car item)) name))))))
     (when found
-      (let ((body (cdr found)))
-        (if (= (length body) 1)
-            (car body)
-            body)))))
+      (cdr found))))
 
 (defun parse-accordion-children (children)
   "Parse a list of accordion-item S-expressions into a list of plists.
-Each plist has :VALUE, :HEADER, and :PANEL keys.
+Each plist has :NAME, :HEADER, and :PANEL keys.
 Accepts either a bare accordion-item sexp or a list of them."
   (let ((items (cond
                  ((null children) nil)
@@ -71,13 +68,13 @@ Accepts either a bare accordion-item sexp or a list of them."
                                    (symbolp (caar rest))
                                    (string= (string (caar rest)) "@")))
                    (attrs     (when has-attrs (cdar rest)))
-                   (value     (let ((attr (find "value" attrs
+                   (name      (let ((attr (find "name" attrs
                                                :key  (lambda (a)
                                                        (string-downcase (string (car a))))
                                                :test #'string=)))
                                  (when attr (cadr attr))))
                    (sub-items (if has-attrs (cdr rest) rest)))
-              (list :value  value
+              (list :name   name
                     :header (find-dsl-child "accordion-header" sub-items)
                     :panel  (find-dsl-child "accordion-panel"  sub-items))))))
 
@@ -87,33 +84,33 @@ Accepts either a bare accordion-item sexp or a list of them."
                         (accordion-duration (or duration "0.3s"))
                         (accordion-items    (or items (parse-accordion-children children))))
     (let-function
-        ((toggle-item (value)
+        ((toggle-item (name)
            (if (string= accordion-mode "multiple")
                ;; Multiple mode: add or remove from the open list
-               (if (member value open-items :test #'string=)
-                   (setf open-items (remove value open-items :test #'string=))
-                   (push value open-items))
+               (if (member name open-items :test #'string=)
+                   (setf open-items (remove name open-items :test #'string=))
+                   (push name open-items))
                ;; Single mode: open the clicked item, or close it if already open
-               (if (member value open-items :test #'string=)
+               (if (member name open-items :test #'string=)
                    (setf open-items nil)
-                   (setf open-items (list value))))))
+                   (setf open-items (list name))))))
       `(:div (@ (class "accordion")
                 (style ,(format nil "--accordion-duration: ~A" accordion-duration)))
          (:style ,*accordion-css*)
          ,@(mapcar
              (lambda (item)
-               (let* ((value   (getf item :value))
+               (let* ((name    (getf item :name))
                       (header  (getf item :header))
                       (panel   (getf item :panel))
-                      (is-open (member value open-items :test #'string=)))
+                      (is-open (member name open-items :test #'string=)))
                  `(:div (@ (class "accordion-item"))
                     (:div (@ (class "accordion-header")
-                             (onclick (toggle-item ,value)))
-                      ,header)
+                             (onclick (toggle-item ,name)))
+                      ,@(if (listp header) header (list header)))
                     (:div (@ (class ,(if is-open
                                          "accordion-panel-wrapper accordion-panel-wrapper--open"
                                          "accordion-panel-wrapper")))
                       (:div (@ (class "accordion-panel"))
                         (:div (@ (class "accordion-panel-content"))
-                          ,panel))))))
+                          ,@(if (listp panel) panel (list panel))))))))
              accordion-items)))))
