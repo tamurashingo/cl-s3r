@@ -822,6 +822,23 @@ To stop any sample:
 make down
 ```
 
+### Component Spec-Sheet (`spec/`)
+
+An interactive [spec-sheet](https://github.com/tamurashingo/spec-sheet) browser for the components included in this repository. Similar to Storybook — browse named parameter variations (sheets) and tweak props live in a Playground.
+
+```sh
+cd spec
+make spec-sheet
+```
+
+Open `http://localhost:5010/spec-sheet`.
+
+To stop:
+
+```sh
+make down
+```
+
 ### External: clails + cl-s3r Sample ([tamurashingo/clails-s3r-sample](https://github.com/tamurashingo/clails-s3r-sample))
 
 A multi-user TODO application that demonstrates using cl-s3r as a BFF/SSR frontend alongside [clails](https://github.com/tamurashingo/clails) (a REST API server), backed by PostgreSQL.
@@ -947,6 +964,14 @@ cl-s3r/
       Dockerfile
       docker-compose.yml   -- Port 5006
       Makefile
+  spec/
+    Makefile               -- make spec-sheet: build image and start on port 5010
+    Dockerfile
+    docker-compose.yml     -- Port 5010
+    src/
+      spec-loader.lisp     -- Loads all component spec files
+      accordion/
+        accordion.lisp     -- defspec + defsheets for the accordion component
   e2e/
     Dockerfile             -- Playwright runner image (mcr.microsoft.com/playwright)
     docker-compose.yml     -- Starts all samples + playwright runner
