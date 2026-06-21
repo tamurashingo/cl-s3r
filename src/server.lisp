@@ -251,6 +251,32 @@ LAYOUT controls which layout wraps the page HTML:
         collect (subseq str start pos)
         while pos))
 
+(defun percent-decode (string)
+  "Decode a percent-encoded URL query parameter value.
+Handles %XX sequences and + as space."
+  (with-output-to-string (out)
+    (let ((i 0)
+          (len (length string)))
+      (loop while (< i len) do
+        (let ((c (char string i)))
+          (cond
+            ((and (char= c #\%)
+                  (< (+ i 2) len))
+             (let ((hex (subseq string (1+ i) (+ i 3))))
+               (handler-case
+                   (progn
+                     (write-char (code-char (parse-integer hex :radix 16)) out)
+                     (incf i 3))
+                 (error ()
+                   (write-char c out)
+                   (incf i)))))
+            ((char= c #\+)
+             (write-char #\Space out)
+             (incf i))
+            (t
+             (write-char c out)
+             (incf i))))))))
+
 (defun parse-query-string (query-string)
   "Parse 'a=1&b=2' into a plist with uppercase keyword keys."
   (when (and query-string (not (string= query-string "")))
@@ -258,7 +284,7 @@ LAYOUT controls which layout wraps the page HTML:
           for eq-pos = (position #\= pair)
           when eq-pos
           nconc (list (make-keyword (string-upcase (subseq pair 0 eq-pos)))
-                      (subseq pair (1+ eq-pos))))))
+                      (percent-decode (subseq pair (1+ eq-pos)))))))
 
 (defun escape-html-string (str)
   (with-output-to-string (out)
