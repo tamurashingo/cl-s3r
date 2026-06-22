@@ -1,0 +1,23 @@
+;;; Font Awesome Free - star-half-stroke icon
+;;; License: CC BY 4.0 License
+;;; Project: https://fontawesome.com/
+
+(defpackage #:cl-s3r.components.fa-star-half-stroke
+  (:use #:cl)
+  (:import-from #:cl-s3r.component #:define-component)
+  (:import-from #:cl-s3r.components.icon.util #:size->css-dimension)
+  (:export #:fa-star-half-stroke))
+
+(in-package #:cl-s3r.components.fa-star-half-stroke)
+
+(define-component fa-star-half-stroke (&key color size width height)
+  (let* ((dim (when size (size->css-dimension size)))
+         (effective-width  (or dim width))
+         (effective-height (or dim height)))
+    `(:svg (@ (xmlns "http://www.w3.org/2000/svg")
+              (viewbox "0 0 576 512")
+              ,@(when effective-width  `((width  ,effective-width)))
+              ,@(when effective-height `((height ,effective-height)))
+              ,@(when color `((style ,(format nil "color: ~A;" color)))))
+       (:path (@ (fill "currentColor")
+                 (d "M309.5-18.9c-4.1-8-12.4-13.1-21.4-13.1s-17.3 5.1-21.4 13.1L193.1 125.3 33.2 150.7c-8.9 1.4-16.3 7.7-19.1 16.3s-.5 18 5.8 24.4l114.4 114.5-25.2 159.9c-1.4 8.9 2.3 17.9 9.6 23.2s16.9 6.1 25 2L288.1 417.6 432.4 491c8 4.1 17.7 3.3 25-2s11-14.2 9.6-23.2L441.7 305.9 556.1 191.4c6.4-6.4 8.6-15.8 5.8-24.4s-10.1-14.9-19.1-16.3L383 125.3 309.5-18.9zM264.1 91.8l0 284.1-100.1 50.9 19.8-125.5c1.2-7.6-1.3-15.3-6.7-20.7l-89.8-89.9 125.5-20c7.6-1.2 14.1-6 17.6-12.8l33.8-66.2zm48 284.1l0-284.1 33.8 66.2c3.5 6.8 10 11.6 17.6 12.8l125.5 20-89.8 89.9c-5.4 5.4-7.9 13.1-6.7 20.7l19.8 125.5-100.1-50.9z"))))))

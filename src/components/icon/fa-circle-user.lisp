@@ -1,0 +1,23 @@
+;;; Font Awesome Free - circle-user icon
+;;; License: CC BY 4.0 License
+;;; Project: https://fontawesome.com/
+
+(defpackage #:cl-s3r.components.fa-circle-user
+  (:use #:cl)
+  (:import-from #:cl-s3r.component #:define-component)
+  (:import-from #:cl-s3r.components.icon.util #:size->css-dimension)
+  (:export #:fa-circle-user))
+
+(in-package #:cl-s3r.components.fa-circle-user)
+
+(define-component fa-circle-user (&key color size width height)
+  (let* ((dim (when size (size->css-dimension size)))
+         (effective-width  (or dim width))
+         (effective-height (or dim height)))
+    `(:svg (@ (xmlns "http://www.w3.org/2000/svg")
+              (viewbox "0 0 512 512")
+              ,@(when effective-width  `((width  ,effective-width)))
+              ,@(when effective-height `((height ,effective-height)))
+              ,@(when color `((style ,(format nil "color: ~A;" color)))))
+       (:path (@ (fill "currentColor")
+                 (d "M406.5 399.6C387.4 352.9 341.5 320 288 320l-64 0c-53.5 0-99.4 32.9-118.5 79.6-35.6-37.3-57.5-87.9-57.5-143.6 0-114.9 93.1-208 208-208s208 93.1 208 208c0 55.7-21.9 106.2-57.5 143.6zm-40.1 32.7C334.4 452.4 296.6 464 256 464s-78.4-11.6-110.5-31.7c7.3-36.7 39.7-64.3 78.5-64.3l64 0c38.8 0 71.2 27.6 78.5 64.3zM256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zm0-272a40 40 0 1 1 0-80 40 40 0 1 1 0 80zm-88-40a88 88 0 1 0 176 0 88 88 0 1 0 -176 0z"))))))
