@@ -14,7 +14,6 @@ RUN mkdir -p /root/common-lisp/ && \
 ENV PATH="/root/.roswell/bin:$PATH"
 
 RUN ros install tamurashingo/spec-sheet
-RUN ros run --eval '(ql:quickload :cl-s3r.components.accordion)' --eval '(quit)'
 
 ENTRYPOINT []
 CMD ["spec-sheet", "/app/cl-s3r/spec/src/spec-loader.lisp"]
