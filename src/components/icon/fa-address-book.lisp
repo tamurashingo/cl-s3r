@@ -14,8 +14,6 @@
   (let* ((dim (when size (size->css-dimension size)))
          (effective-width  (or dim width))
          (effective-height (or dim height)))
-    (format t "[fa-address-book] color=~S size=~S width=~S height=~S -> dim=~S eff-w=~S eff-h=~S~%"
-            color size width height dim effective-width effective-height)
     `(:svg (@ (xmlns "http://www.w3.org/2000/svg")
               (viewbox "0 0 512 512")
               ,@(when effective-width  `((width  ,effective-width)))

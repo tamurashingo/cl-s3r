@@ -1,0 +1,23 @@
+;;; Font Awesome Free - headphones-simple icon
+;;; License: CC BY 4.0 License
+;;; Project: https://fontawesome.com/
+
+(defpackage #:cl-s3r.components.fa-headphones-simple
+  (:use #:cl)
+  (:import-from #:cl-s3r.component #:define-component)
+  (:import-from #:cl-s3r.components.icon.util #:size->css-dimension)
+  (:export #:fa-headphones-simple))
+
+(in-package #:cl-s3r.components.fa-headphones-simple)
+
+(define-component fa-headphones-simple (&key color size width height)
+  (let* ((dim (when size (size->css-dimension size)))
+         (effective-width  (or dim width))
+         (effective-height (or dim height)))
+    `(:svg (@ (xmlns "http://www.w3.org/2000/svg")
+              (viewbox "0 0 448 512")
+              ,@(when effective-width  `((width  ,effective-width)))
+              ,@(when effective-height `((height ,effective-height)))
+              ,@(when color `((style ,(format nil "color: ~A;" color)))))
+       (:path (@ (fill "currentColor")
+                 (d "M48 224c0-97.2 78.8-176 176-176s176 78.8 176 176l0 44.8c-14.1-8.2-30.5-12.8-48-12.8l-16 0c-26.5 0-48 21.5-48 48l0 128c0 26.5 21.5 48 48 48l16 0c53 0 96-43 96-96l0-160C448 100.3 347.7 0 224 0S0 100.3 0 224L0 384c0 53 43 96 96 96l16 0c26.5 0 48-21.5 48-48l0-128c0-26.5-21.5-48-48-48l-16 0c-17.5 0-33.9 4.7-48 12.8L48 224zm0 128c0-26.5 21.5-48 48-48l16 0 0 128-16 0c-26.5 0-48-21.5-48-48l0-32zm352 0l0 32c0 26.5-21.5 48-48 48l-16 0 0-128 16 0c26.5 0 48 21.5 48 48z"))))))

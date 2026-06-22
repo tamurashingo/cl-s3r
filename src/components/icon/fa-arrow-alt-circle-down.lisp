@@ -1,0 +1,23 @@
+;;; Font Awesome Free - arrow-alt-circle-down icon
+;;; License: CC BY 4.0 License
+;;; Project: https://fontawesome.com/
+
+(defpackage #:cl-s3r.components.fa-arrow-alt-circle-down
+  (:use #:cl)
+  (:import-from #:cl-s3r.component #:define-component)
+  (:import-from #:cl-s3r.components.icon.util #:size->css-dimension)
+  (:export #:fa-arrow-alt-circle-down))
+
+(in-package #:cl-s3r.components.fa-arrow-alt-circle-down)
+
+(define-component fa-arrow-alt-circle-down (&key color size width height)
+  (let* ((dim (when size (size->css-dimension size)))
+         (effective-width  (or dim width))
+         (effective-height (or dim height)))
+    `(:svg (@ (xmlns "http://www.w3.org/2000/svg")
+              (viewbox "0 0 512 512")
+              ,@(when effective-width  `((width  ,effective-width)))
+              ,@(when effective-height `((height ,effective-height)))
+              ,@(when color `((style ,(format nil "color: ~A;" color)))))
+       (:path (@ (fill "currentColor")
+                 (d "M256 464a208 208 0 1 1 0-416 208 208 0 1 1 0 416zM256 0a256 256 0 1 0 0 512 256 256 0 1 0 0-512zM244.7 387.3c6.2 6.2 16.4 6.2 22.6 0l104-104c4.6-4.6 5.9-11.5 3.5-17.4S366.5 256 360 256l-72 0 0-104c0-13.3-10.7-24-24-24l-16 0c-13.3 0-24 10.7-24 24l0 104-72 0c-6.5 0-12.3 3.9-14.8 9.9s-1.1 12.9 3.5 17.4l104 104z"))))))

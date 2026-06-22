@@ -897,93 +897,69 @@ ERROR_HANDLING_URL=http://localhost:5006 \
 npx playwright test
 ```
 
+## UI Components
+
+The `cl-s3r.components` namespace provides pre-built UI components as separate ASDF systems. Each can be loaded independently.
+
+### Accordion (`cl-s3r.components.accordion`)
+
+Expandable content sections with animated open/close transitions. Supports single and multiple open modes, configurable transition duration, and arbitrary content in headers and panels.
+
+```lisp
+(ql:quickload :cl-s3r.components.accordion)
+```
+
+```lisp
+(accordion (@ (default "item1") (mode "single"))
+  (accordion-item (@ (name "item1"))
+    (accordion-header "Title")
+    (accordion-panel "Content")))
+```
+
+### Icon (`cl-s3r.components.icon`)
+
+Font Awesome SVG icons rendered inline. Color is controlled via CSS `color`, size via a named scale (`XXS` through `XXL`).
+
+```lisp
+(ql:quickload :cl-s3r.components.icon)
+```
+
+```lisp
+(icon (@ (value "fa-bell") (color "#3b82f6") (size "L")))
+```
+
 ## Project Structure
 
 ```
 cl-s3r/
-  cl-s3r.asd              -- System definition
+  cl-s3r.asd                       -- Core system definition
+  cl-s3r.components.accordion.asd  -- Accordion component system
+  cl-s3r.components.icon.asd       -- Icon component system
   roswell/
-    s3rup.ros              -- Roswell script: s3rup <app.asd>
+    s3rup.ros        -- CLI entry point (s3rup <app.asd>)
   src/
-    renderer.lisp          -- S-expression to HTML converter
-    component.lisp         -- Component/layout macros, action dispatch, error types
-    testing.lisp           -- Test utilities (cl-s3r.testing package)
-    cookie.lisp            -- Per-request cookie read/write (cl-s3r.cookie package)
-    session.lisp           -- Session management with HMAC-signed cookies (cl-s3r.session package)
-    config.lisp            -- .env loading and typed env-var helpers (cl-s3r.config package)
-    server.lisp            -- HTTP server, prefix routing, layouts, error pages, static files
-    client/
-      cl-s3r.js            -- Client entry module (barrel)
-      cl-mount.js          -- mount() with apiPrefix support
-      cl-runtime.js        -- State collection and server communication
-      cl-morph.js          -- DOM morphing utility (in-place diff update)
-      cl-component.js      -- Custom Element base class
+    renderer.lisp    -- S-expression → HTML converter
+    component.lisp   -- define-component, define-layout, action dispatch, error types
+    testing.lisp     -- Test utilities (cl-s3r.testing)
+    cookie.lisp      -- Per-request cookie access (cl-s3r.cookie)
+    session.lisp     -- HMAC-signed session management (cl-s3r.session)
+    config.lisp      -- .env loading and typed env helpers (cl-s3r.config)
+    server.lisp      -- HTTP server, prefix routing, layouts, error pages, static files
+    client/          -- ES6 modules served to the browser
+    components/
+      accordion/     -- Accordion component (cl-s3r.components.accordion)
+      icon/          -- Font Awesome SVG icon component (cl-s3r.components.icon)
   sample/
-    01-counter/
-      app.lisp             -- Layout, counter component, and route configuration
-      test.lisp            -- Rove tests
-      public/styles.css    -- Sample stylesheet (served via configure-static-dir)
-      cl-s3r-sample-counter.asd  -- App system (loaded by s3rup)
-      01-counter.asd       -- Test system definition
-      Dockerfile
-      docker-compose.yml   -- Port 5001
-      Makefile             -- make test runs tests via Docker volume mount
-    02-todo/
-      app.lisp             -- Layout, todo app (nested components, form submission)
-      test.lisp            -- Rove tests
-      cl-s3r-sample-todo.asd     -- App system (loaded by s3rup)
-      02-todo.asd          -- Test system definition
-      Dockerfile
-      docker-compose.yml   -- Port 5002
-      Makefile
-    03-books/
-      app.lisp             -- Layout, list/detail pattern with path parameters
-      test.lisp            -- Rove tests
-      cl-s3r-sample-books.asd    -- App system (loaded by s3rup)
-      03-books.asd         -- Test system definition
-      Dockerfile
-      docker-compose.yml   -- Port 5003
-      Makefile
-    04-login/
-      app.lisp             -- Layout, session-based login, protected detail page
-      test.lisp            -- Rove tests
-      04-login.asd         -- App and test system definition
-      Dockerfile
-      docker-compose.yml   -- Port 5004
-      Makefile
-    05-carousel/
-      app.lisp             -- Carousel component with CSS transition animation
-      05-carousel.asd      -- App system definition
-      Dockerfile
-      docker-compose.yml   -- Port 5005
-      Makefile
-    06-error-handling/
-      app.lisp             -- define-error-page and signal-http-error demo
-      test.lisp            -- Rove tests
-      06-error-handling.asd -- App and test system definition
-      Dockerfile
-      docker-compose.yml   -- Port 5006
-      Makefile
+    01-counter/      -- Basic stateful counter (port 5001)
+    02-todo/         -- Nested components and form submission (port 5002)
+    03-books/        -- Multi-route app with path parameters (port 5003)
+    04-login/        -- Session-based authentication (port 5004)
+    05-carousel/     -- CSS transition animations via DOM morphing (port 5005)
+    06-error-handling/ -- define-error-page and signal-http-error (port 5006)
   spec/
-    Makefile               -- make spec-sheet: build image and start on port 5010
-    Dockerfile
-    docker-compose.yml     -- Port 5010
-    src/
-      spec-loader.lisp     -- Loads all component spec files
-      accordion/
-        accordion.lisp     -- defspec + defsheets for the accordion component
-  e2e/
-    Dockerfile             -- Playwright runner image (mcr.microsoft.com/playwright)
-    docker-compose.yml     -- Starts all samples + playwright runner
-    Makefile               -- make image / make test / make clean
-    package.json           -- @playwright/test dependency
-    playwright.config.js   -- Projects, each targeting one sample via env var URL
-    tests/
-      01-counter.spec.js
-      02-todo.spec.js
-      03-books.spec.js
-      04-login.spec.js
-      06-error-handling.spec.js
+    src/             -- Component spec definitions for the spec-sheet browser
+    Makefile         -- make spec-sheet: start on port 5010
+  e2e/               -- Playwright browser tests for all sample apps
 ```
 
 ## Dependencies
@@ -1082,3 +1058,15 @@ cl-s3r/
 ## License
 
 MIT
+
+## Third-party Licenses
+
+### Font Awesome Free
+
+The icon component (`cl-s3r.components.icon`) includes SVG icon data from [Font Awesome Free](https://fontawesome.com/).
+
+- **Icons:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- **Fonts:** [SIL OFL 1.1](https://openfontlicense.org/open-font-license-official-text/)
+- **Code:** [MIT License](https://opensource.org/licenses/MIT)
+
+https://fontawesome.com/license/free
