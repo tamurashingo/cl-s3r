@@ -46,7 +46,7 @@
                "opacity:0.38;"
                "cursor:not-allowed;}"))
 
-(define-component button (&key variant prefix suffix size disabled background-color color children)
+(define-component button (&key variant prefix suffix size disabled background-color color children onclick)
   (let* ((effective-variant          (or variant "contained"))
          (effective-size             (or size "medium"))
          (effective-background-color (or background-color "#1976d2"))
@@ -68,7 +68,8 @@
                                              (if disabled " cl-s3r-button--disabled" "")))
          (attrs                      `((class ,class-name)
                                        (style ,button-style)
-                                       ,@(when disabled '((disabled "")))))
+                                       ,@(when disabled '((disabled "")))
+                                       ,@(when onclick `((onclick ,onclick)))))
          (prefix-icon                (when (and prefix (not (string= prefix "")))
                                        `(icon (@ (value ,prefix) (size "S")))))
          (suffix-icon                (when (and suffix (not (string= suffix "")))

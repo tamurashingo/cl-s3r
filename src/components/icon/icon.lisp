@@ -279,9 +279,9 @@
 
 (in-package #:cl-s3r.components.icon)
 
-(define-component icon (&key value color size)
-  (let ((dim (size->css-dimension (or size "M"))))
-    (cond
+(define-component icon (&key value color size onclick)
+  (let* ((dim (size->css-dimension (or size "M")))
+         (inner (cond
       ((string= value "fa-address-book")
        `(fa-address-book (@ (color ,color) (width ,dim) (height ,dim))))
       ((string= value "fa-address-card")
@@ -829,3 +829,7 @@
       ((string= value "fa-xmark-circle")
        `(fa-xmark-circle (@ (color ,color) (width ,dim) (height ,dim))))
       (t nil))))
+    (if onclick
+        `(:span (@ (onclick ,onclick) (style "display:inline-flex;cursor:pointer;"))
+           ,inner)
+        inner)))
