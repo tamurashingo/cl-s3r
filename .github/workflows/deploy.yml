@@ -1,0 +1,73 @@
+name: Build and Deploy to Cloud Run
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - src/**
+      - spec/**
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }} # tamurashingo/cl-s3r
+  SERVICE_NAME: cl-s3r-ui-component
+  REGION: asia-northeast1
+
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+    - name: Configure Docker artifactregistry
+      run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+
+    - name: Build Docker image
+      run: |
+        docker build \
+          --platform linux/amd64 \
+          -t asia-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/$SERVICE_NAME/$SERVICE_NAME:${{ github.sha }} \
+          -f spec/Dockerfile .
+
+    - name: Push Docker Image
+      run: docker push asia-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/$SERVICE_NAME/$SERVICE_NAME:${{ github.sha }}
+
+    - name: Deploy to Cloud Run
+      run: |
+        gcloud run deploy $SERVICE_NAME \
+          --project \
+          ${{ secrets.GCP_PROJECT_ID }} \
+          --image \
+          asia-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/$SERVICE_NAME/$SERVICE_NAME:${{ github.sha }} \
+          --region \
+          $REGION \
+          --service-account \
+          ${{ secrets.GCP_SERVICE_ACCOUNT }} \
+          --memory \
+          512M \
+          --cpu \
+          1 \
+          --timeout \
+          15m \
+          --min-instances \
+          0 \
+          --max-instances \
+          1 \
+          --allow-unauthenticated
