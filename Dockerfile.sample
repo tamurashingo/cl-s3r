@@ -19,6 +19,6 @@ RUN ros install /app/roswell/s3rup.ros
 
 ENTRYPOINT []
 
-# ARG は全 RUN の後に置く。これより上のレイヤーは全サンプルで同一キャッシュが使われる。
 ARG SAMPLE_NAME
-CMD s3rup /app/sample/${SAMPLE_NAME}/${SAMPLE_NAME}.asd
+ENV SAMPLE_NAME=${SAMPLE_NAME}
+CMD ["sh", "-c", "s3rup /app/sample/${SAMPLE_NAME}/${SAMPLE_NAME}.asd"]
