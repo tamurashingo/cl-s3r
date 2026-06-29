@@ -13,6 +13,7 @@ RUN mkdir -p /root/common-lisp/ && \
 
 ENV PATH="/root/.roswell/bin:$PATH"
 
+RUN ros install /app/cl-s3r
 RUN ros install tamurashingo/spec-sheet
 
 ENTRYPOINT []
