@@ -43,5 +43,12 @@ module.exports = defineConfig({
       },
       testMatch: '**/06-error-handling.spec.js',
     },
+    {
+      name: 'data-table',
+      use: {
+        baseURL: process.env.DATA_TABLE_URL || 'http://localhost:5008',
+      },
+      testMatch: '**/08-data-table.spec.js',
+    },
   ],
 });

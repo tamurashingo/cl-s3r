@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sample: [01-counter, 02-todo, 03-books, 04-login]
+        sample: [01-counter, 02-todo, 03-books, 04-login, 08-data-table]
     steps:
       - uses: actions/checkout@v4
 

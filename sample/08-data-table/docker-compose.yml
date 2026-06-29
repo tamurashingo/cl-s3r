@@ -1,0 +1,9 @@
+services:
+  app:
+    build:
+      context: ../../
+      dockerfile: sample/08-data-table/Dockerfile
+    ports:
+      - "${PORT:-5008}:${PORT:-5008}"
+    environment:
+      - PORT=${PORT:-5008}
