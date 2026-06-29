@@ -1,8 +1,11 @@
 services:
   counter:
+    image: cl-s3r-sample-01-counter:latest
     build:
       context: ../
-      dockerfile: sample/01-counter/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 01-counter
     environment:
       PORT: "5001"
     healthcheck:
@@ -13,9 +16,12 @@ services:
       start_period: 120s
 
   todo:
+    image: cl-s3r-sample-02-todo:latest
     build:
       context: ../
-      dockerfile: sample/02-todo/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 02-todo
     environment:
       PORT: "5002"
     healthcheck:
@@ -26,9 +32,12 @@ services:
       start_period: 120s
 
   books:
+    image: cl-s3r-sample-03-books:latest
     build:
       context: ../
-      dockerfile: sample/03-books/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 03-books
     environment:
       PORT: "5003"
     healthcheck:
@@ -39,9 +48,12 @@ services:
       start_period: 120s
 
   login:
+    image: cl-s3r-sample-04-login:latest
     build:
       context: ../
-      dockerfile: sample/04-login/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 04-login
     environment:
       PORT: "5004"
     healthcheck:
@@ -52,9 +64,12 @@ services:
       start_period: 120s
 
   error-handling:
+    image: cl-s3r-sample-06-error-handling:latest
     build:
       context: ../
-      dockerfile: sample/06-error-handling/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 06-error-handling
     environment:
       PORT: "5006"
     healthcheck:
@@ -65,9 +80,12 @@ services:
       start_period: 120s
 
   data-table:
+    image: cl-s3r-sample-08-data-table:latest
     build:
       context: ../
-      dockerfile: sample/08-data-table/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 08-data-table
     environment:
       PORT: "5008"
     healthcheck:

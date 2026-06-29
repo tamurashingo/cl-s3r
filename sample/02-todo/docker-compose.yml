@@ -1,8 +1,11 @@
 services:
   app:
+    image: cl-s3r-sample-02-todo:latest
     build:
       context: ../../
-      dockerfile: sample/02-todo/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 02-todo
     ports:
       - "${PORT:-5002}:${PORT:-5002}"
     environment:

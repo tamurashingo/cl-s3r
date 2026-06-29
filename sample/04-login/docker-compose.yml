@@ -1,8 +1,11 @@
 services:
   app:
+    image: cl-s3r-sample-04-login:latest
     build:
       context: ../../
-      dockerfile: sample/04-login/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 04-login
     ports:
       - "${PORT:-5004}:${PORT:-5004}"
     environment:

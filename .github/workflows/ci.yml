@@ -7,9 +7,44 @@ on:
     branches: [main]
 
 jobs:
+  build:
+    name: Build sample Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build all sample images
+        run: |
+          for sample in 01-counter 02-todo 03-books 04-login 06-error-handling 08-data-table; do
+            docker build \
+              --build-arg SAMPLE_NAME=${sample} \
+              -t cl-s3r-sample-${sample}:latest \
+              -f Dockerfile.sample \
+              .
+          done
+
+      - name: Save all images to single tarball
+        run: |
+          docker save \
+            cl-s3r-sample-01-counter:latest \
+            cl-s3r-sample-02-todo:latest \
+            cl-s3r-sample-03-books:latest \
+            cl-s3r-sample-04-login:latest \
+            cl-s3r-sample-06-error-handling:latest \
+            cl-s3r-sample-08-data-table:latest \
+            -o /tmp/cl-s3r-samples.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images-all-samples
+          path: /tmp/cl-s3r-samples.tar
+          retention-days: 1
+
   unit-tests:
     name: Unit tests (${{ matrix.sample }})
     runs-on: ubuntu-latest
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -17,9 +52,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image
-        working-directory: sample/${{ matrix.sample }}
-        run: make image
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images-all-samples
+          path: /tmp
+
+      - name: Load Docker images
+        run: docker load -i /tmp/cl-s3r-samples.tar
 
       - name: Run unit tests
         working-directory: sample/${{ matrix.sample }}
@@ -32,9 +72,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker images
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images-all-samples
+          path: /tmp
+
+      - name: Load Docker images
+        run: docker load -i /tmp/cl-s3r-samples.tar
+
+      - name: Build playwright image
         working-directory: e2e
-        run: make image
+        run: docker compose build playwright
 
       - name: Run E2E tests
         working-directory: e2e
