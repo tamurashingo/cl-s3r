@@ -1,10 +1,12 @@
 services:
   app:
+    image: cl-s3r-sample-01-counter:latest
     build:
       context: ../../
-      dockerfile: sample/01-counter/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 01-counter
     ports:
       - "${PORT:-5001}:${PORT:-5001}"
     environment:
       - PORT=${PORT:-5001}
-

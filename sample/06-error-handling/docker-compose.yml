@@ -1,8 +1,11 @@
 services:
   app:
+    image: cl-s3r-sample-06-error-handling:latest
     build:
       context: ../../
-      dockerfile: sample/06-error-handling/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 06-error-handling
     ports:
       - "${PORT:-5006}:${PORT:-5006}"
     environment:

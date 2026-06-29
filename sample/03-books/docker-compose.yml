@@ -1,8 +1,11 @@
 services:
   app:
+    image: cl-s3r-sample-03-books:latest
     build:
       context: ../../
-      dockerfile: sample/03-books/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 03-books
     ports:
       - "${PORT:-5003}:${PORT:-5003}"
     environment:

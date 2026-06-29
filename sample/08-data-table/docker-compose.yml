@@ -1,8 +1,11 @@
 services:
   app:
+    image: cl-s3r-sample-08-data-table:latest
     build:
       context: ../../
-      dockerfile: sample/08-data-table/Dockerfile
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 08-data-table
     ports:
       - "${PORT:-5008}:${PORT:-5008}"
     environment:
