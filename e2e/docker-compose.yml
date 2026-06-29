@@ -64,6 +64,19 @@ services:
       retries: 15
       start_period: 120s
 
+  data-table:
+    build:
+      context: ../
+      dockerfile: sample/08-data-table/Dockerfile
+    environment:
+      PORT: "5008"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5008/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
   playwright:
     build:
       context: .
@@ -79,9 +92,12 @@ services:
         condition: service_healthy
       error-handling:
         condition: service_healthy
+      data-table:
+        condition: service_healthy
     environment:
       COUNTER_URL: "http://counter:5001"
       TODO_URL: "http://todo:5002"
       BOOKS_URL: "http://books:5003"
       LOGIN_URL: "http://login:5004"
       ERROR_HANDLING_URL: "http://error-handling:5006"
+      DATA_TABLE_URL: "http://data-table:5008"
