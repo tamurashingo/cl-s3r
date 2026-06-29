@@ -51,9 +51,16 @@ test.describe('data-table', () => {
     const info = pager.locator('.data-table__pager-info');
 
     // 30 rows / page-size 5 = 6 pages; click next 5 times
-    for (let i = 0; i < 5; i++) {
-      await nextBtn.click();
-    }
+    await nextBtn.click();
+    await expect(info).toContainText('2 /');
+    await nextBtn.click();
+    await expect(info).toContainText('3 /');
+    await nextBtn.click();
+    await expect(info).toContainText('4 /');
+    await nextBtn.click();
+    await expect(info).toContainText('5 /');
+    await nextBtn.click();
+    await expect(info).toContainText('6 /');
     await expect(info).toContainText('6 /');
     await expect(nextBtn).toBeDisabled();
   });
