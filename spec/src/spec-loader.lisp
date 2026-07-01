@@ -3,5 +3,6 @@
 (load (merge-pathnames "button/button.lisp"             *load-truename*))
 (load (merge-pathnames "button/onclick-demo.lisp"       *load-truename*))
 (load (merge-pathnames "data-table/data-table.lisp"     *load-truename*))
+(load (merge-pathnames "dialog/dialog.lisp"             *load-truename*))
 (load (merge-pathnames "icon/icon.lisp"                 *load-truename*))
 (load (merge-pathnames "icon/onclick-demo.lisp"         *load-truename*))
