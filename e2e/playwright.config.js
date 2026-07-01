@@ -50,5 +50,12 @@ module.exports = defineConfig({
       },
       testMatch: '**/08-data-table.spec.js',
     },
+    {
+      name: 'dialog',
+      use: {
+        baseURL: process.env.DIALOG_URL || 'http://localhost:5009',
+      },
+      testMatch: '**/09-dialog.spec.js',
+    },
   ],
 });

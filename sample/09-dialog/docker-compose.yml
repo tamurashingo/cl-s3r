@@ -1,0 +1,9 @@
+services:
+  app:
+    build:
+      context: ../../
+      dockerfile: sample/09-dialog/Dockerfile
+    ports:
+      - "${PORT:-5009}:${PORT:-5009}"
+    environment:
+      - PORT=${PORT:-5009}
