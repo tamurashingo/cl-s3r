@@ -15,7 +15,7 @@ jobs:
 
       - name: Build all sample images
         run: |
-          for sample in 01-counter 02-todo 03-books 04-login 06-error-handling 08-data-table; do
+          for sample in 01-counter 02-todo 03-books 04-login 06-error-handling 08-data-table 09-dialog; do
             docker build \
               --build-arg SAMPLE_NAME=${sample} \
               -t cl-s3r-sample-${sample}:latest \
@@ -32,6 +32,7 @@ jobs:
             cl-s3r-sample-04-login:latest \
             cl-s3r-sample-06-error-handling:latest \
             cl-s3r-sample-08-data-table:latest \
+            cl-s3r-sample-09-dialog:latest \
             -o /tmp/cl-s3r-samples.tar
 
       - name: Upload image artifact
@@ -48,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sample: [01-counter, 02-todo, 03-books, 04-login, 08-data-table]
+        sample: [01-counter, 02-todo, 03-books, 04-login, 08-data-table, 09-dialog]
     steps:
       - uses: actions/checkout@v4
 
