@@ -1,4 +1,4 @@
-PORT ?= 5010
+PORT ?= 5100
 
 .PHONY: spec-sheet image up down
 

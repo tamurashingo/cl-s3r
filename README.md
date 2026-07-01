@@ -826,12 +826,18 @@ make down
 
 An interactive [spec-sheet](https://github.com/tamurashingo/spec-sheet) browser for the components included in this repository. Similar to Storybook — browse named parameter variations (sheets) and tweak props live in a Playground.
 
+A live demo is available at:
+
+https://cl-s3r-ui-component-323245676568.asia-northeast1.run.app/spec-sheet/
+
+To run locally:
+
 ```sh
 cd spec
 make spec-sheet
 ```
 
-Open `http://localhost:5010/spec-sheet`.
+Open `http://localhost:5100/spec-sheet`.
 
 To stop:
 
@@ -899,34 +905,20 @@ npx playwright test
 
 ## UI Components
 
-The `cl-s3r.components` namespace provides pre-built UI components as separate ASDF systems. Each can be loaded independently.
+The `cl-s3r.components` namespace provides pre-built UI components as separate ASDF systems. Components are located under `src/components/`, each in its own subdirectory with a corresponding `.asd` file.
 
-### Accordion (`cl-s3r.components.accordion`)
+You can browse live examples and tweak props interactively via the spec-sheet:
 
-Expandable content sections with animated open/close transitions. Supports single and multiple open modes, configurable transition duration, and arbitrary content in headers and panels.
+https://cl-s3r-ui-component-323245676568.asia-northeast1.run.app/spec-sheet/
 
-```lisp
-(ql:quickload :cl-s3r.components.accordion)
+To run the spec-sheet locally:
+
+```sh
+cd spec
+make spec-sheet
 ```
 
-```lisp
-(accordion (@ (default "item1") (mode "single"))
-  (accordion-item (@ (name "item1"))
-    (accordion-header "Title")
-    (accordion-panel "Content")))
-```
-
-### Icon (`cl-s3r.components.icon`)
-
-Font Awesome SVG icons rendered inline. Color is controlled via CSS `color`, size via a named scale (`XXS` through `XXL`).
-
-```lisp
-(ql:quickload :cl-s3r.components.icon)
-```
-
-```lisp
-(icon (@ (value "fa-bell") (color "#3b82f6") (size "L")))
-```
+Open `http://localhost:5100/spec-sheet`.
 
 ## Project Structure
 
@@ -958,7 +950,7 @@ cl-s3r/
     06-error-handling/ -- define-error-page and signal-http-error (port 5006)
   spec/
     src/             -- Component spec definitions for the spec-sheet browser
-    Makefile         -- make spec-sheet: start on port 5010
+    Makefile         -- make spec-sheet: start on port 5100
   e2e/               -- Playwright browser tests for all sample apps
 ```
 

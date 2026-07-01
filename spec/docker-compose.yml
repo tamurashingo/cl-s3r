@@ -4,6 +4,6 @@ services:
       context: ../
       dockerfile: spec/Dockerfile
     ports:
-      - "${PORT:-5010}:${PORT:-5010}"
+      - "${PORT:-5100}:${PORT:-5100}"
     environment:
-      - PORT=${PORT:-5010}
+      - PORT=${PORT:-5100}
