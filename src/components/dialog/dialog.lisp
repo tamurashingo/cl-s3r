@@ -18,6 +18,25 @@
                "align-items:center;"
                "justify-content:center;"
                "z-index:1000;}"
+               ".cl-s3r-dialog-overlay--transition{"
+               "opacity:0;"
+               "pointer-events:none;"
+               "visibility:hidden;"
+               "transition:"
+               "opacity var(--dialog-transition-duration,0.25s) var(--dialog-transition-easing,ease),"
+               "visibility 0s linear var(--dialog-transition-duration,0.25s);}"
+               ".cl-s3r-dialog-overlay--transition.cl-s3r-dialog-overlay--open{"
+               "opacity:1;"
+               "pointer-events:auto;"
+               "visibility:visible;"
+               "transition:"
+               "opacity var(--dialog-transition-duration,0.25s) var(--dialog-transition-easing,ease),"
+               "visibility 0s linear 0s;}"
+               ".cl-s3r-dialog-overlay--transition .cl-s3r-dialog-box{"
+               "transform:scale(0.95);"
+               "transition:transform var(--dialog-transition-duration,0.25s) var(--dialog-transition-easing,ease);}"
+               ".cl-s3r-dialog-overlay--transition.cl-s3r-dialog-overlay--open .cl-s3r-dialog-box{"
+               "transform:scale(1);}"
                ".cl-s3r-dialog-box{"
                "background:#fff;"
                "border-radius:4px;"
@@ -87,12 +106,19 @@ Signals an error if ACTION-ITEMS is nil or contains no dialog-action forms."
       (error "dialog: dialog-actions must contain at least one dialog-action form"))
     actions))
 
-(define-component dialog (&key children &allow-other-keys)
+(define-component dialog (&key (open nil open-p) children &allow-other-keys)
   (let* ((title-forms   (find-dsl-child "dialog-title"   children))
          (content-forms (find-dsl-child "dialog-content" children))
          (actions-items (find-dsl-child "dialog-actions" children))
-         (actions       (parse-dialog-actions actions-items)))
-    `(:div (@ (class "cl-s3r-dialog-overlay"))
+         (actions       (parse-dialog-actions actions-items))
+         (overlay-class (cond
+                          ((not open-p)
+                           "cl-s3r-dialog-overlay")
+                          (open
+                           "cl-s3r-dialog-overlay cl-s3r-dialog-overlay--transition cl-s3r-dialog-overlay--open")
+                          (t
+                           "cl-s3r-dialog-overlay cl-s3r-dialog-overlay--transition"))))
+    `(:div (@ (class ,overlay-class))
        (:style ,*dialog-css*)
        (:div (@ (class "cl-s3r-dialog-box"))
          (:header (@ (class "cl-s3r-dialog-header"))

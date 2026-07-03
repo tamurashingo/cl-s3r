@@ -104,6 +104,35 @@
                    (dialog-action (@ (type "submit") (form "name-form")) "ok")
                    (dialog-action (@ (onclick (handle-cancel))) "cancel")))))))))
 
+;;; --- dissolve dialog (fade + scale transition) ---
+
+(define-component dissolve-dialog-demo (&key &allow-other-keys)
+  (let-component-state ((dialog-open nil)
+                        (last-answer ""))
+    (let-function
+        ((open-dialog () (setf dialog-open t))
+         (handle-yes  () (setf dialog-open nil) (setf last-answer "yes"))
+         (handle-no   () (setf dialog-open nil) (setf last-answer "no")))
+      `(:section
+         (:h2 "Dissolve dialog")
+         (:p "Uses " (:code "(open ,dialog-open)") " to keep the dialog in the DOM."
+             " The overlay fades and the box scales in/out via CSS transition.")
+         (:button (@ (onclick (open-dialog))) "Open dissolve dialog")
+         ,@(when (not (string= last-answer ""))
+             `((:p "Last answer: " ,last-answer)))
+         (dialog (@ (open ,dialog-open))
+           (dialog-title "Dissolve demo")
+           (dialog-content
+             (:p "This dialog fades and scales in/out using CSS transitions.")
+             (:p "Customize with "
+                 (:code "--dialog-transition-duration")
+                 " and "
+                 (:code "--dialog-transition-easing")
+                 "."))
+           (dialog-actions
+             (dialog-action (@ (onclick (handle-yes))) "Yes")
+             (dialog-action (@ (onclick (handle-no)))  "No")))))))
+
 ;;; --- root page ---
 
 (define-component dialog-page (&key &allow-other-keys)
@@ -111,7 +140,8 @@
      (:h1 "Dialog Component Examples")
      (alert-dialog-demo)
      (confirm-dialog-demo)
-     (input-dialog-demo)))
+     (input-dialog-demo)
+     (dissolve-dialog-demo)))
 
 (configure-route :path "/"
                  :component "dialog-page"

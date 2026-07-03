@@ -71,6 +71,41 @@ Import the component into your package:
                    (dialog-action (@ (onclick (handle-no)))  "No")))))))))
 ```
 
+### Dialog with CSS transition (dissolve effect)
+
+Pass the `open` prop to keep the dialog in the DOM at all times and let CSS handle visibility.  
+The overlay fades in/out and the dialog box scales in/out when the `open` value changes.
+
+```lisp
+(define-component my-app (&key &allow-other-keys)
+  (let-component-state ((dialog-open nil)
+                        (last-answer ""))
+    (let-function
+        ((open-dialog () (setf dialog-open t))
+         (handle-yes  () (setf dialog-open nil) (setf last-answer "yes"))
+         (handle-no   () (setf dialog-open nil) (setf last-answer "no")))
+      `(:div
+         (:button (@ (onclick (open-dialog))) "Open")
+         ,@(when (not (string= last-answer ""))
+             `((:p "Last answer: " ,last-answer)))
+         (dialog (@ (open ,dialog-open))
+           (dialog-title "Confirm")
+           (dialog-content (:p "Are you sure?"))
+           (dialog-actions
+             (dialog-action (@ (onclick (handle-yes))) "Yes")
+             (dialog-action (@ (onclick (handle-no)))  "No")))))))
+```
+
+**Key difference from the `(when ...)` pattern:**
+
+| Pattern | DOM presence | Open animation | Close animation |
+|---------|-------------|----------------|-----------------|
+| `(when dialog-open ((dialog ...)))` | Added/removed on each state change | None | None |
+| `(dialog (@ (open ,dialog-open)) ...)` | Always in DOM | Fade + scale in | Fade + scale out |
+
+The `open` prop is the only addition needed — no other code changes are required.  
+When `open` is not passed, the component renders exactly as before (always visible, for use with the `when` pattern).
+
 ### Input dialog (form submission)
 
 Use an HTML `<form>` inside `dialog-content` and the `form=` attribute on the submit button to associate them.  
@@ -143,37 +178,83 @@ The parent component is responsible for:
 
 ## CSS customization
 
-The overlay background color can be overridden with the `--dialog-overlay-bg` CSS variable:
+### Overlay background
+
+Override the overlay background color with `--dialog-overlay-bg`:
 
 ```css
-/* global override */
 :root {
   --dialog-overlay-bg: rgba(0, 0, 128, 0.4);
 }
 ```
 
 ```lisp
-;; per-component override via inline style on a parent element
+;; per-component override via inline style
 `(:div (@ (style "--dialog-overlay-bg:rgba(255,0,0,0.3);"))
    ,@(when open `((dialog ...))))
 ```
 
+### Transition duration and easing
+
+When using the `open` prop, the transition speed and easing can be customized with CSS variables.  
+Both the overlay fade and the box scale share the same values.
+
+```css
+:root {
+  --dialog-transition-duration: 0.25s;   /* default */
+  --dialog-transition-easing:   ease;    /* default */
+}
+```
+
+Example — slower, spring-like entrance:
+
+```css
+:root {
+  --dialog-transition-duration: 0.4s;
+  --dialog-transition-easing:   cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+```
+
+To disable transitions entirely:
+
+```css
+:root {
+  --dialog-transition-duration: 0s;
+}
+```
+
 ## HTML structure
+
+### Without `open` prop (`when` pattern)
 
 ```html
 <div class="cl-s3r-dialog-overlay">
   <style>/* embedded CSS */</style>
   <div class="cl-s3r-dialog-box">
-    <header class="cl-s3r-dialog-header">
-      <span>Dialog title</span>
-    </header>
-    <main class="cl-s3r-dialog-main">
-      <!-- dialog-content forms -->
-    </main>
+    <header class="cl-s3r-dialog-header"><span>Dialog title</span></header>
+    <main class="cl-s3r-dialog-main"><!-- dialog-content forms --></main>
     <footer class="cl-s3r-dialog-footer">
       <button class="cl-s3r-dialog-action" data-on-click='["handle-close"]'>OK</button>
     </footer>
   </div>
+</div>
+```
+
+### With `open` prop (transition mode)
+
+When `open` is truthy:
+
+```html
+<div class="cl-s3r-dialog-overlay cl-s3r-dialog-overlay--transition cl-s3r-dialog-overlay--open">
+  ...
+</div>
+```
+
+When `open` is falsy (hidden, but still in DOM):
+
+```html
+<div class="cl-s3r-dialog-overlay cl-s3r-dialog-overlay--transition">
+  ...
 </div>
 ```
 
@@ -182,6 +263,8 @@ The overlay background color can be overridden with the `--dialog-overlay-bg` CS
 | Class | Element | Notes |
 |-------|---------|-------|
 | `cl-s3r-dialog-overlay` | root `<div>` | Fixed full-screen overlay; background controlled by `--dialog-overlay-bg` |
+| `cl-s3r-dialog-overlay--transition` | root `<div>` | Added when `open` prop is passed. Enables fade + scale transitions; overlay starts hidden (`opacity: 0`, `visibility: hidden`) |
+| `cl-s3r-dialog-overlay--open` | root `<div>` | Added alongside `--transition` when `open` is truthy. Makes the overlay visible (`opacity: 1`, `visibility: visible`) |
 | `cl-s3r-dialog-box` | `<div>` | Centered dialog box; `min-width: 320px`, `max-width: 560px` |
 | `cl-s3r-dialog-header` | `<header>` | Title area; `font-size: 18px`, `font-weight: 600`, bottom border |
 | `cl-s3r-dialog-main` | `<main>` | Content area; `padding: 16px 24px` |

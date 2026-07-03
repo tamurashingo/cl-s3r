@@ -147,3 +147,41 @@
   :title "Rich content (h1, img, icon)"
   :render #'(lambda (&key &allow-other-keys)
               `(:div (dialog-rich-demo))))
+
+;;; --- dissolve sheet ---
+
+(cl-s3r.component:define-component dialog-dissolve-demo (&key &allow-other-keys)
+  (cl-s3r.component:let-component-state ((open t)
+                                          (last-action ""))
+    (cl-s3r.component:let-function
+        ((do-ok     () (setf open nil) (setf last-action "OK"))
+         (do-cancel () (setf open nil) (setf last-action "Cancel"))
+         (reopen    () (setf open t)   (setf last-action "")))
+      `(:div (@ (style "font-family:sans-serif;min-height:100vh;position:relative;background:#f5f5f5;"))
+         (:div (@ (style "padding:20px;"))
+           (:p (@ (style "margin:0;color:#666;font-size:14px;"))
+               "Dialog fades and scales in/out via CSS transition.")
+           ,@(when (not (string= last-action ""))
+               `((:p (@ (style "margin-top:12px;color:#333;font-size:14px;"))
+                   "Last action: \"" ,last-action "\"")
+                 (:button (@ (onclick (reopen))
+                             (style "margin-top:8px;padding:6px 14px;border:1px solid #1976d2;border-radius:4px;background:#fff;color:#1976d2;cursor:pointer;font-size:13px;"))
+                   "Reopen dialog"))))
+         (dialog (@ (open ,open))
+           (dialog-title "Dissolve")
+           (dialog-content
+             (:p "This dialog fades and scales in/out.")
+             (:p (@ (style "font-size:13px;color:#777;margin-top:8px;"))
+                 "Customize with "
+                 (:code "--dialog-transition-duration")
+                 " / "
+                 (:code "--dialog-transition-easing")
+                 "."))
+           (dialog-actions
+             (dialog-action (@ (onclick (do-cancel))) "Cancel")
+             (dialog-action (@ (onclick (do-ok)))     "OK")))))))
+
+(spec-sheet:defsheet dialog dissolve
+  :title "Dissolve (fade + scale)"
+  :render #'(lambda (&key &allow-other-keys)
+              `(:div (dialog-dissolve-demo))))
