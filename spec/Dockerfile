@@ -17,4 +17,4 @@ RUN ros install /app/cl-s3r
 RUN ros install tamurashingo/spec-sheet
 
 ENTRYPOINT []
-CMD ["spec-sheet", "/app/cl-s3r/spec/src/spec-loader.lisp"]
+CMD ["spec-sheet", "/app/cl-s3r/spec/spec-loader.lisp"]

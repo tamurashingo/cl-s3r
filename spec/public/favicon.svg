@@ -1,0 +1,14 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="12" fill="#161b22"/>
+  <line x1="32" y1="6" x2="32" y2="58" stroke="#21262d" stroke-width="1.5"/>
+  <line x1="6" y1="32" x2="58" y2="32" stroke="#21262d" stroke-width="1.5"/>
+  <text x="19" y="21" text-anchor="middle" dominant-baseline="middle"
+        font-family="monospace" font-size="20" font-weight="700" fill="#ffffff">S</text>
+  <text x="45" y="21" text-anchor="middle" dominant-baseline="middle"
+        font-family="monospace" font-size="20" font-weight="700" fill="#ffffff">S</text>
+  <text x="19" y="46" text-anchor="middle" dominant-baseline="middle"
+        font-family="monospace" font-size="20" font-weight="700" fill="#ffffff">S</text>
+  <rect x="33" y="33" width="25" height="25" rx="4" fill="#3fb950"/>
+  <text x="45" y="46" text-anchor="middle" dominant-baseline="middle"
+        font-family="monospace" font-size="20" font-weight="700" fill="#0a2010">R</text>
+</svg>

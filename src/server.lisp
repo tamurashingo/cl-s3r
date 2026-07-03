@@ -35,6 +35,7 @@
            #:configure-root-page
            #:configure-default-layout
            #:configure-static-dir
+           #:add-static-dir
            #:configure-token-expired-behavior
            #:asset-path
            #:define-error-page
@@ -48,6 +49,8 @@
 (defvar *default-layout* nil)
 (defvar *static-dir* nil
   "Directory from which static files are served. Defaults to \"public/\" when nil.")
+(defvar *additional-static-dirs* nil
+  "Additional static directories served after the primary *static-dir*.")
 (defvar *token-expired-mode* :reload
   "Global 409 behavior: :reload, :alert, or :confirm.")
 (defvar *token-expired-message* nil
@@ -115,6 +118,13 @@ MESSAGE is the dialog text shown in :alert and :confirm modes."
 DIR can be a string or pathname. When nil, defaults to \"public/\" relative to CWD.
 Has no effect when S3R_ASSET_SERVING_DISABLED=true."
   (setf *static-dir* dir))
+
+(defun add-static-dir (dir)
+  "Append DIR to the list of additional static directories to be served.
+Files are looked up in *static-dir* first, then each directory added via this function
+in the order they were added. Can be called multiple times."
+  (setf *additional-static-dirs*
+        (append *additional-static-dirs* (list dir))))
 
 (defun asset-path (path)
   "Return the URL for a static asset at PATH.
@@ -566,26 +576,34 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                              (t '(404 (:content-type "text/plain") ("Not Found")))))))))))))
       (inject-set-cookie-headers response))))
 
+(defun %make-static-middleware (app dir)
+  "Wrap APP with Lack static middleware serving files from DIR.
+Only serves a path when the corresponding file actually exists in DIR."
+  (let* ((root (uiop:ensure-directory-pathname dir))
+         (path-fn (lambda (path-info)
+                    (let ((relative (if (and (> (length path-info) 0)
+                                             (char= (char path-info 0) #\/))
+                                        (subseq path-info 1)
+                                        path-info)))
+                      (when (and (not (string= relative ""))
+                                 (uiop:file-exists-p
+                                  (merge-pathnames relative root)))
+                        path-info)))))
+    (funcall lack/middleware/static:*lack-middleware-static*
+             app :path path-fn :root root)))
+
 (defun build-app ()
   "Build the Clack app function, wrapping with static file middleware unless disabled.
 Static serving is disabled when S3R_ASSET_SERVING_DISABLED=true.
-The static root defaults to \"public/\" when *static-dir* is nil."
+The static root defaults to \"public/\" when *static-dir* is nil.
+Additional directories registered via add-static-dir are served after the primary dir."
   (if (getenv-boolean "S3R_ASSET_SERVING_DISABLED")
       #'app
-      (let* ((root (uiop:ensure-directory-pathname (or *static-dir* "public/")))
-             (path-fn (lambda (path-info)
-                        (let ((relative (if (and (> (length path-info) 0)
-                                                 (char= (char path-info 0) #\/))
-                                            (subseq path-info 1)
-                                            path-info)))
-                          (when (and (not (string= relative ""))
-                                     (uiop:file-exists-p
-                                      (merge-pathnames relative root)))
-                            path-info)))))
-        (funcall lack/middleware/static:*lack-middleware-static*
-                 #'app
-                 :path path-fn
-                 :root root))))
+      (let ((all-dirs (append (list (or *static-dir* "public/"))
+                              *additional-static-dirs*)))
+        (reduce #'%make-static-middleware
+                (reverse all-dirs)
+                :initial-value #'app))))
 
 (defun start-server (&key (port 5000) (address "0.0.0.0"))
   (format t "Starting server on ~A:~A...~%" address port)
