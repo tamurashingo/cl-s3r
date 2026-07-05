@@ -111,6 +111,22 @@ services:
       retries: 15
       start_period: 120s
 
+  checkbox:
+    image: cl-s3r-sample-10-checkbox:latest
+    build:
+      context: ../
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 10-checkbox
+    environment:
+      PORT: "5010"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5010/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
   playwright:
     build:
       context: .
@@ -130,6 +146,8 @@ services:
         condition: service_healthy
       dialog:
         condition: service_healthy
+      checkbox:
+        condition: service_healthy
     environment:
       COUNTER_URL: "http://counter:5001"
       TODO_URL: "http://todo:5002"
@@ -138,3 +156,4 @@ services:
       ERROR_HANDLING_URL: "http://error-handling:5006"
       DATA_TABLE_URL: "http://data-table:5008"
       DIALOG_URL: "http://dialog:5009"
+      CHECKBOX_URL: "http://checkbox:5010"

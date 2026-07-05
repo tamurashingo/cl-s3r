@@ -18,6 +18,9 @@ function syncAttributes(oldEl, newEl) {
       oldEl.setAttribute(attr.name, attr.value);
     }
   }
+  if ('checked' in oldEl && 'checked' in newEl && oldEl.checked !== newEl.checked) {
+    oldEl.checked = newEl.checked;
+  }
 }
 
 function morphNode(oldNode, newNode) {

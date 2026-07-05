@@ -147,7 +147,12 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
                                       (symbolp (caar rest))
                                       (string= (string (caar rest)) "@")))
                       (component-id
-                       (or *forced-component-id*
+                       (or (when *forced-component-id*
+                             (prog1 *forced-component-id*
+                               ;; Consume once: *forced-component-id* must only apply to
+                               ;; the single target component of this render pass, not to
+                               ;; every nested child component encountered afterward.
+                               (setf *forced-component-id* nil)))
                            (when has-attrs
                              (second (assoc "id" (cdar rest)
                                             :test (lambda (a b)
@@ -193,7 +198,13 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
     (if func-name
         (let ((*current-component-state* current-state)
               (*current-component-functions* nil)
-              (*sync-component-state* nil))
+              (*sync-component-state* nil)
+              ;; render-component binds this for nested children (via expand-child-component),
+              ;; but the top-level action target is invoked directly via run-comp below, bypassing
+              ;; render-component -- without this, *current-render-registry* would capture nil
+              ;; instead of component-init-args when re-registering this component's own id,
+              ;; corrupting the registry for the component's *next* action dispatch.
+              (*current-component-init-args* component-init-args))
 
           ;; Dry-run to populate *current-component-functions* via let-function.
           ;; Pass the stored init-args so that non-state props (items, mode, etc.)
@@ -217,13 +228,19 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
                   (format t "Warning: Action ~A not found in component ~A (Available: ~S)~%"
                           action-name component-name (mapcar #'car *current-component-functions*))))
 
-            ;; Re-render with updated state, preserving component ID
-            (let ((final-html
-                   (let ((*component-render-counter* 0)
-                         (*forced-component-id* forced-component-id)
-                         (*component-expander* #'expand-child-component))
-                     (render-html (run-comp)))))
-              (list :html final-html :state *current-component-state*))))
+            ;; Re-render with updated state, preserving component ID.
+            ;; Bind a fresh registry so any nested child components rendered during
+            ;; this pass get their init-args re-registered under whatever id they
+            ;; receive now — their id can differ from the one assigned at the initial
+            ;; full-page render, since *component-render-counter* restarts at 0 here.
+            (let* ((fresh-registry (make-hash-table :test 'equal))
+                   (final-html
+                    (let ((*component-render-counter* 0)
+                          (*forced-component-id* forced-component-id)
+                          (*current-render-registry* fresh-registry)
+                          (*component-expander* #'expand-child-component))
+                      (render-html (run-comp)))))
+              (list :html final-html :state *current-component-state* :registry fresh-registry))))
         (error "Component ~A not found" component-name))))
 
 (defun render-component (name state &rest args)
