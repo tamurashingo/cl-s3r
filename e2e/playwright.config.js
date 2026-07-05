@@ -57,5 +57,12 @@ module.exports = defineConfig({
       },
       testMatch: '**/09-dialog.spec.js',
     },
+    {
+      name: 'checkbox',
+      use: {
+        baseURL: process.env.CHECKBOX_URL || 'http://localhost:5010',
+      },
+      testMatch: '**/10-checkbox.spec.js',
+    },
   ],
 });

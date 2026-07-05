@@ -427,6 +427,13 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                                              state-plist
                                              :forced-component-id target-component-id
                                              :component-init-args component-init-args)))
+          ;; Merge freshly-registered (component-id -> init-args) entries back into this
+          ;; token's registry, so nested children re-rendered during this action (whose ids
+          ;; may differ from the ones assigned at the initial full-page render) remain
+          ;; addressable by future actions dispatched directly to them.
+          (when render-registry
+            (loop for k being the hash-keys of (getf result :registry) using (hash-value v)
+                  do (setf (gethash k render-registry) v)))
           (jonathan:to-json
            `(:|html| ,(getf result :html)
              :|state| ,(getf result :state))))))))

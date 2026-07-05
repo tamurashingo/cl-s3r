@@ -228,6 +228,7 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpire
   mountContainer.addEventListener('click', (event) => {
     const trigger = event.target.closest('[data-on-click]');
     if (!trigger) return;
+    event.preventDefault();
     try {
       const action = JSON.parse(trigger.getAttribute('data-on-click'));
       const owningComp = findActionTarget(trigger, mountContainer);
