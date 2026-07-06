@@ -43,10 +43,52 @@ jobs:
           path: /tmp/cl-s3r-samples.tar
           retention-days: 1
 
+  component-test-build:
+    name: Build component test image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build component test image
+        run: docker build -f Dockerfile.component-test -t cl-s3r-component-test:latest .
+
+      - name: Save image
+        run: docker save cl-s3r-component-test:latest -o /tmp/cl-s3r-component-test.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-component-test
+          path: /tmp/cl-s3r-component-test.tar
+          retention-days: 1
+
+  component-tests:
+    name: Component unit tests (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    needs: component-test-build
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [accordion, checkbox, data-table, dialog]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-component-test
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load -i /tmp/cl-s3r-component-test.tar
+
+      - name: Run component tests
+        run: make component.${{ matrix.component }}.test
+
   unit-tests:
     name: Unit tests (${{ matrix.sample }})
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, component-tests]
     strategy:
       fail-fast: false
       matrix:
