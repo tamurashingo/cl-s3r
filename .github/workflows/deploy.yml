@@ -39,15 +39,25 @@ jobs:
     - name: Configure Docker artifactregistry
       run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
 
+    - name: Log in to GitHub Container Registry
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login $REGISTRY -u ${{ github.actor }} --password-stdin
+
     - name: Build Docker image
       run: |
         docker build \
           --platform linux/amd64 \
           -t asia-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/$SERVICE_NAME/$SERVICE_NAME:${{ github.sha }} \
+          -t $REGISTRY/$IMAGE_NAME:${{ github.sha }} \
+          -t $REGISTRY/$IMAGE_NAME:latest \
           -f spec/Dockerfile .
 
-    - name: Push Docker Image
+    - name: Push Docker Image (Artifact Registry)
       run: docker push asia-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/$SERVICE_NAME/$SERVICE_NAME:${{ github.sha }}
+
+    - name: Push Docker Image (GHCR)
+      run: |
+        docker push $REGISTRY/$IMAGE_NAME:${{ github.sha }}
+        docker push $REGISTRY/$IMAGE_NAME:latest
 
     - name: Deploy to Cloud Run
       run: |
