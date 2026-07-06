@@ -106,8 +106,8 @@
                                           :args (list :children (make-confirm-children))))
            (sexp   (getf result :raw-sexp))
            (html   (format nil "~A" sexp)))
-      (ok (not (null (search "handle-yes" html))))
-      (ok (not (null (search "handle-no"  html))))))
+      (ok (not (null (search "handle-yes" html :test #'char-equal))))
+      (ok (not (null (search "handle-no"  html :test #'char-equal))))))
 
   (testing "errors when dialog-actions is missing"
     (ok (signals
