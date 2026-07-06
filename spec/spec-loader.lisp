@@ -2,6 +2,7 @@
 (load (merge-pathnames "src/badge/badge.lisp"               *load-truename*))
 (load (merge-pathnames "src/button/button.lisp"             *load-truename*))
 (load (merge-pathnames "src/button/onclick-demo.lisp"       *load-truename*))
+(load (merge-pathnames "src/checkbox/checkbox.lisp"         *load-truename*))
 (load (merge-pathnames "src/data-table/data-table.lisp"     *load-truename*))
 (load (merge-pathnames "src/dialog/dialog.lisp"             *load-truename*))
 (load (merge-pathnames "src/icon/icon.lisp"                 *load-truename*))
