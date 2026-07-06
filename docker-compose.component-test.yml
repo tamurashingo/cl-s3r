@@ -1,0 +1,6 @@
+services:
+  app:
+    image: cl-s3r-component-test:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.component-test

@@ -17,6 +17,30 @@
 (defun sample-columns ()
   '(:name "Name" :status "Status" :age "Age"))
 
+(defun attr-value (attrs name)
+  (let ((pair (find name attrs
+                    :key  (lambda (a) (string-downcase (string (car a))))
+                    :test #'string=)))
+    (when pair (second pair))))
+
+(defun pager-div-p (node)
+  "True if NODE is the (:div (@ (class \"data-table__pager\")) ...) node itself."
+  (and (consp node)
+       (eq :div (first node))
+       (consp (second node))
+       (equal "data-table__pager" (attr-value (cdr (second node)) "class"))))
+
+(defun has-pager-p (sexp)
+  "Walk SEXP looking for the pager div, structurally rather than by
+substring search -- the component's own <style> block contains the
+literal text \"data-table__pager\" as a CSS selector, so a naive
+(search \"data-table__pager\" ...) always matches regardless of
+whether the pager div is actually rendered."
+  (cond
+    ((not (consp sexp)) nil)
+    ((pager-div-p sexp) t)
+    (t (some #'has-pager-p sexp))))
+
 ;;; --- initial state ---
 
 (deftest test-data-table-initial-state
@@ -183,7 +207,7 @@
                                           :args (list :fetch-fn fetch-fn)))
            (sexp (getf result :sexp)))
       ;; next button has onclick, not disabled
-      (ok (search "next-page" (format nil "~A" sexp)))))
+      (ok (search "next-page" (format nil "~A" sexp) :test #'char-equal))))
 
   (testing "fetch-fn with has-next nil hides the pager when has-prev is also nil"
     (let* ((fetch-fn (lambda (&key (page 1) (page-size 10))
@@ -198,4 +222,4 @@
                                                       :pager t)))
            (sexp (getf result :sexp)))
       ;; pager is hidden when both has-prev and has-next are nil
-      (ok (not (search "data-table__pager" (format nil "~A" sexp)))))))
+      (ok (not (has-pager-p sexp))))))

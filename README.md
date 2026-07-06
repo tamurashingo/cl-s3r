@@ -869,6 +869,18 @@ cd sample/06-error-handling && make test
 
 `make image` must have been run at least once before running tests.
 
+### Running Component Tests (Rove unit tests)
+
+`src/components/*/*_test.lisp` unit tests are run against a dedicated Docker image, separate from the sample apps. From the repo root:
+
+```sh
+make component.image          # build the component test image (once)
+make component.test           # run all tested components (accordion, checkbox, data-table, dialog)
+make component.checkbox.test  # run a single component's tests
+```
+
+Like the sample `make test` targets, this mounts the current source tree into the image, so tests always run against the latest code without rebuilding.
+
 ### E2E Tests (Playwright)
 
 The `e2e/` directory contains Playwright tests that start all sample apps and run browser-level interaction tests against them inside Docker.
