@@ -8,6 +8,7 @@
                 #:*error-page-registry*
                 #:*component-args-registry*
                 #:*current-render-registry*
+                #:*client-state-tree*
                 #:call-component-action
                 #:render-component
                 #:render-component-html
@@ -105,6 +106,24 @@ STATE-TREE uses jonathan's :|key| keyword style. Returns the node plist or NIL."
         (loop for child in (getf state-tree :|children|)
               for found = (find-state-by-component-id child component-id)
               when found return found))))
+
+(defun normalize-node-state (node)
+  "Return NODE's own state as an upcase-keyword plist."
+  (normalize-state-keys
+   (loop for (k v) on (getf node :|state|) by #'cddr
+         append (list (make-keyword (string-upcase (string k))) v))))
+
+(defun collect-client-states (node &optional (table (make-hash-table :test 'equal)))
+  "Index every node of the state tree the browser sent by its component-id.
+The re-render reads this so that nested components keep the state they held in
+the DOM instead of being re-initialised from their props."
+  (when node
+    (let ((id (getf node :|component-id|)))
+      (when (and id (not (string= id "")))
+        (setf (gethash id table) (normalize-node-state node))))
+    (dolist (child (getf node :|children|))
+      (collect-client-states child table)))
+  table)
 
 (defun configure-token-expired-behavior (mode &optional message)
   "Set the global behavior when the client receives a 409 render-token expired response.
@@ -410,15 +429,15 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                     root-state-node)
                 root-state-node))
            (component-name    (getf target-node :|component|))
-           (current-state-raw (getf target-node :|state|))
            (action-name       (car action))
            (action-args       (cdr action)))
-      (let* ((state-plist (normalize-state-keys
-                           (loop for (k v) on current-state-raw by #'cddr
-                                 append (list (make-keyword (string-upcase (string k))) v))))
-             ;; Look up the stored init-args for this component instance.
+      (let* ((state-plist (normalize-node-state target-node))
+             ;; Every node's state, so the re-rendered subtree can restore its
+             ;; nested components rather than reset them.
+             (client-states (collect-client-states root-state-node))
+             ;; Look up the stored init-args and tree position for this instance.
              (render-registry   (gethash render-token *component-args-registry*))
-             (component-init-args
+             (registry-entry
               (when (and render-registry
                          target-component-id
                          (not (string= target-component-id "")))
@@ -426,11 +445,14 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
         (let ((result (call-component-action component-name action-name action-args
                                              state-plist
                                              :forced-component-id target-component-id
-                                             :component-init-args component-init-args)))
-          ;; Merge freshly-registered (component-id -> init-args) entries back into this
-          ;; token's registry, so nested children re-rendered during this action (whose ids
-          ;; may differ from the ones assigned at the initial full-page render) remain
-          ;; addressable by future actions dispatched directly to them.
+                                             :component-init-args (getf registry-entry :args)
+                                             :component-path (getf registry-entry :path)
+                                             :client-state-tree client-states)))
+          ;; Merge the entries registered during this pass back into the token's
+          ;; registry. Paths are stable, so these normally overwrite an instance's
+          ;; own entry with identical data; the merge matters for children that only
+          ;; appear after the action (a new list item, a newly expanded branch), which
+          ;; must be addressable by the actions dispatched to them next.
           (when render-registry
             (loop for k being the hash-keys of (getf result :registry) using (hash-value v)
                   do (setf (gethash k render-registry) v)))

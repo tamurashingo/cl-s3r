@@ -24,7 +24,8 @@
     ("/case5" . "5. two instances of the same stateful child")
     ("/case6" . "6. depth-3 nesting")
     ("/case7" . "7. lifted state (recommended pattern)")
-    ("/case8" . "8. component-id reuse across partial re-renders")))
+    ("/case8" . "8. component-id reuse across partial re-renders")
+    ("/case9" . "9. stateful children in a list, with and without key")))
 
 (define-layout app-layout (&key children &allow-other-keys)
   `(:html (@ (lang "en"))
@@ -330,6 +331,41 @@ ul.index a { color: #2980b9; text-decoration: none; }
              (counter-child (@ (label "inner B") (start 50)))))))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Case 9: stateful children inside a list, with and without a key prop
+;;; ---------------------------------------------------------------------------
+
+(define-component case9-app (&key &allow-other-keys)
+  (let-component-state ((items '("alpha" "bravo" "charlie")))
+    (let-function ((rotate ()
+                     (when (cdr items)
+                       (setf items (append (cdr items) (list (car items))))))
+                   (drop-first ()
+                     (when items
+                       (setf items (cdr items)))))
+      `(:div
+         (:h2 "Case 9: stateful children in a list, with and without key")
+         (:p (@ (class "steps"))
+           (:b "Steps: ") "give a few children different counts, then click "
+           "\"rotate\" or \"drop first\". "
+           (:b "Question: ") "does each count stay with its own item? The upper row "
+           "passes " (:b "key") ", the lower row does not.")
+         (:div (@ (class "parent"))
+           (:div (@ (class "parent-head"))
+             (:span (@ (class "tag")) "root")
+             (:span (@ (class "label")) "items")
+             (:button (@ (class "rotate") (onclick (rotate))) "rotate")
+             (:button (@ (class "drop-first") (onclick (drop-first))) "drop first"))
+           (mid-section (@ (title "with key"))
+             ,@(loop for name in items
+                     collect `(counter-child (@ (key ,name)
+                                                (label ,name)
+                                                (start 0)))))
+           (mid-section (@ (title "without key"))
+             ,@(loop for name in items
+                     collect `(counter-child (@ (label ,name)
+                                                (start 0))))))))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Routes
 ;;; ---------------------------------------------------------------------------
 
@@ -342,3 +378,4 @@ ul.index a { color: #2980b9; text-decoration: none; }
 (configure-route :path "/case6" :component "case6-app"    :props '())
 (configure-route :path "/case7" :component "case7-app"    :props '())
 (configure-route :path "/case8" :component "case8-app"    :props '())
+(configure-route :path "/case9" :component "case9-app"    :props '())

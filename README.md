@@ -171,6 +171,34 @@ Child components are written as non-keyword symbols in the parent's S-expression
 
 **Design principle:** All actions are defined in the root component. Child components are purely presentational — they receive data and callback S-expressions as props, emit them as `data-on-click` / `data-on-submit` attributes, and the client always routes actions to the root component.
 
+> A parent callback must not be rendered *inside* a child that has its own state: the client routes the action to the nearest stateful ancestor, so the callback never reaches the component that defines it. See `sample/11-nested` (`/case4`).
+
+### Component Identity and Nested State
+
+A child component may declare its own `let-component-state`. Each instance is identified by a `component-id` built from its position in the tree — the root is `0`, and every child appends its own segment:
+
+```html
+<div data-component="case5-app"      data-component-id="case5-app-0">
+  <div data-component="counter-child" data-component-id="counter-child-0.0" data-state='{"COUNT":1}'>
+  <div data-component="counter-child" data-component-id="counter-child-0.1" data-state='{"COUNT":2}'>
+```
+
+Because the path does not depend on the render pass, re-rendering one subtree produces the same ids as a full page render. On every action the client POSTs the whole state tree, and the server restores each nested component's state by id — so a parent's re-render no longer resets its children. A component that was not in the tree the browser reported (a list item that has just been added, for instance) starts from its props.
+
+#### `key`
+
+Children in a list are numbered by position, so re-ordering or deleting items moves state from one item to another. Pass `key` to give a child an identity that survives the change — the key replaces the positional segment of the id (`todo-item-0.1.k7`):
+
+```lisp
+(define-component todo-list (&key todos &allow-other-keys)
+  `(:ul
+     ,@(loop for todo in todos
+             collect `(todo-item (@ (key   ,(getf todo :id))
+                                    (title ,(getf todo :title)))))))
+```
+
+`key` only matters for children that own state, or that wrap something which does.
+
 ### Form Submission
 
 Wrap the submit event in `onsubmit`. The client collects `FormData` automatically and appends it as the last argument to the action:
@@ -646,6 +674,9 @@ Use `configure-static-dir` to serve app-specific assets (CSS, images, fonts). Th
 ;; Execute an action against a state. Returns the same plist shape.
 (test-call-action component-name action-name &key state args action-args)
 
+;; Render a component tree to HTML, with nested components expanded.
+(test-render-html component-name &key args state client-state path forced-id)
+
 ;; Extract a key from a state plist (case-insensitive). Returns the full plist when KEY is omitted.
 (test-get-state state &optional key)
 ```
@@ -670,6 +701,28 @@ Return value shape:
                                             :args  '(:initial-count 0))))
   (cl-s3r.testing:test-get-state (getf r2 :state) :count))
 ;; => 1
+```
+
+### Testing Nested Components
+
+`test-render-component` returns the component's own S-expression, with nested
+component calls left unexpanded. To assert on a whole tree — and on the state
+nested components restore — use `test-render-html`, which renders to HTML the
+way the server does:
+
+```lisp
+;; :client-state stands in for the state tree the browser would have reported
+(cl-s3r.testing:test-render-html "case3-app"
+                                 :state        '(:parent-count 7)
+                                 :client-state '(("counter-child-0.0" . (:count 2))))
+;; => "<div data-state=\"{&quot;PARENT-COUNT&quot;:7}\" ... &quot;COUNT&quot;:2 ..."
+```
+
+`:path` and `:forced-id` reproduce the render pass the server performs when an
+action re-renders a single subtree:
+
+```lisp
+(cl-s3r.testing:test-render-html "case5-app" :path '("0") :forced-id "case5-app-0")
 ```
 
 ### Notes on `let-function` and Unused Parameters

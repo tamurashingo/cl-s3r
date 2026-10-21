@@ -2,8 +2,8 @@
 
 A diagnostic sample. Each route isolates one nesting pattern so that the
 behaviour of nested components can be observed without one case disturbing
-another. Unlike the other samples, this one is **not** a showcase: several
-cases demonstrate behaviour that is currently broken.
+another. It doubles as the reproduction case for the nested-component issues
+#31, #32 and #33.
 
 ## Running
 
@@ -38,137 +38,125 @@ ros run \
 * **parent action** — an action defined in an ancestor's `let-function` and
   passed down as an S-expression prop.
 
-## Cases and what actually happens
+## Cases
 
 Verified in Chromium against a locally running server.
 
 | # | Route | Pattern | Result |
 |---|---|---|---|
-| 1 | `/case1` | stateless child invokes a parent action | **works** |
-| 2 | `/case2` | stateful child invokes its own action | **works** |
-| 3 | `/case3` | stateful child, then the parent re-renders | **child state is lost** |
-| 4 | `/case4` | parent action rendered inside a stateful child | **action silently dropped** |
-| 5 | `/case5` | two instances of the same stateful child | works alone; both reset on a parent re-render |
-| 6 | `/case6` | the same patterns three levels deep | depth alone changes nothing |
-| 7 | `/case7` | all state lifted to the root, children stateless | **works — recommended pattern** |
-| 8 | `/case8` | stateful child inside a stateful child | **props of a sibling get overwritten** |
+| 1 | `/case1` | stateless child invokes a parent action | works |
+| 2 | `/case2` | stateful child invokes its own action | works |
+| 3 | `/case3` | stateful child, then the parent re-renders | works — child keeps its state (#31) |
+| 4 | `/case4` | parent action rendered inside a stateful child | **action silently dropped — open (#32)** |
+| 5 | `/case5` | two instances of the same stateful child | works — each keeps its own state (#31, #33) |
+| 6 | `/case6` | the same patterns three levels deep | depth changes nothing |
+| 7 | `/case7` | all state lifted to the root, children stateless | works |
+| 8 | `/case8` | stateful child inside a stateful child | works — ids stay unique (#33) |
+| 9 | `/case9` | stateful children in a list, with and without `key` | `key` follows the item; without it, state follows the position |
 
-### Case 3 — a parent re-render resets the nested child
+### Case 3 — a parent re-render keeps the nested child's state
 
 Click `child +1` twice (child = 2), then `parent +1` once:
 
 ```
-before parent click : case3-app-1 {"PARENT-COUNT":0}   counter-child-2 {"COUNT":2}
-after  parent click : case3-app-1 {"PARENT-COUNT":1}   counter-child-1 {"COUNT":0}
+before parent click : case3-app-0 {"PARENT-COUNT":0}   counter-child-0.0 {"COUNT":2}
+after  parent click : case3-app-0 {"PARENT-COUNT":1}   counter-child-0.0 {"COUNT":2}
 ```
 
-The child falls back to its initial value, and its `data-component-id` changes
-as well.
+The browser collects the whole state tree and POSTs it; the server now indexes
+every node of that tree by `component-id` and hands it to the render pass, so a
+nested component picks its own state back up instead of re-initialising from its
+props. A component that was not in the tree — a list item that has just been
+added, a branch that has just been expanded — still starts from its props.
 
-Cause: a nested component is expanded by `expand-child-component`, which always
-renders the child with a `nil` state (`src/component.lisp:282`):
+### Case 4 — a parent action inside a stateful child never runs (open)
 
-```lisp
-(render-html (apply #'render-component tag nil ...))
-```
-
-The browser does collect the child's state and POSTs it (`collectStates` in
-`src/client/cl-runtime.js` builds the whole tree), but the server only reads the
-node belonging to the action target (`src/server.lisp:409`) and discards the
-rest. So state is only preserved for the component that is directly addressed;
-every other component in the re-rendered subtree restarts from its props.
-
-### Case 4 — a parent action inside a stateful child never runs
-
-The button carries `data-on-click='["PARENT-BUMP"]'`, but nothing happens and
-no error appears in the browser console. The POST body shows why:
+The button carries `data-on-click='["PARENT-BUMP"]'`, but nothing happens and no
+error appears in the browser console. The POST body shows why:
 
 ```json
 {"action":["PARENT-BUMP"],
- "component-id":"stateful-wrapper-2",
+ "component-id":"stateful-wrapper-0.0",
  "state":{"component":"case4-app", ...}}
 ```
 
-`findActionTarget` (`src/client/cl-runtime.js:201`) walks up to the *nearest
-ancestor with a non-empty `data-state`*, which is the wrapper, not the root that
-defines `parent-bump`. The server then looks for `parent-bump` in
-`stateful-wrapper` and only logs to stdout (`src/component.lisp:228`):
+`findActionTarget` (`src/client/cl-runtime.js`) walks up to the *nearest ancestor
+with a non-empty `data-state`*, which is the wrapper, not the root that defines
+`parent-bump`. The server then looks for `parent-bump` in `stateful-wrapper` and
+only logs to stdout:
 
 ```
 Warning: Action PARENT-BUMP not found in component stateful-wrapper (Available: ("wrapper-hit"))
 ```
 
-The client receives a 200 with unchanged HTML, so the failure is invisible in
-the browser. This is the trap when combining a hand-written root with a stateful
-UI component such as `accordion`, `data-table` or an uncontrolled `checkbox`:
-any callback rendered *inside* that component stops reaching the root.
+Tracked in #32. Until it is fixed: do not render a parent callback inside a
+stateful child. If a UI component offers a controlled mode (for example
+`checkbox` with `checked` + `onclick`), use it so the component stays stateless
+and the action reaches the root.
 
-### Case 5 — instances stay separate until the parent re-renders
+### Case 5 and 8 — ids are stable and unique
 
-```
-initial          : counter-child-2 {"COUNT":0}  counter-child-3 {"COUNT":100}
-B+1 B+1 A+1      : counter-child-2 {"COUNT":1}  counter-child-3 {"COUNT":102}
-after parent +1  : counter-child-1 {"COUNT":0}  counter-child-2 {"COUNT":100}
-```
-
-Each instance keeps its own state while only the children act, which confirms
-that per-instance state works as long as nothing above them re-renders. The
-parent re-render resets both (case 3) and shifts every id down by one, because
-the action pass restarts `*component-render-counter*` at 0 while the target's id
-is supplied by `*forced-component-id*` and no longer consumes a number
-(`src/component.lisp:160`, `src/component.lisp:236`).
-
-### Case 8 — id reuse corrupts a sibling's props
-
-Steps: `parent +1`, then `wrapper +1`, then `child +1` on **outer A**.
+`component-id` is `<name>-<path>`, where the path is the component's position in
+the tree: the root is `0` and each child appends its own segment. Numbering is
+relative to the parent and does not depend on the render pass, so a partial
+re-render of one subtree produces exactly the ids the full page produced.
 
 ```
-initial        : counter-child-2 "outer A"   counter-child-4 "inner B"
-after parent +1: counter-child-1 "outer A"   counter-child-3 "inner B"
-after wrapper+1: counter-child-1 "outer A"   counter-child-1 "inner B"   <- duplicate id
-after A   +1   : counter-child-1 "inner B"   counter-child-1 "inner B"   <- A now shows B's props
+/case5 initial         : case5-app-0  counter-child-0.0  counter-child-0.1
+/case5 after parent +1 : case5-app-0  counter-child-0.0  counter-child-0.1
+
+/case8 initial         : counter-child-0.0 "outer A"   counter-child-0.1.0 "inner B"
+/case8 after wrapper+1 : counter-child-0.0 "outer A"   counter-child-0.1.0 "inner B"
 ```
 
-Only the wrapper's subtree is re-rendered for `wrapper-hit`, so its inner child
-is numbered from 1 again and collides with outer A's id. The server merges the
-freshly registered init-args into the render token's registry
-(`src/server.lisp:435`), so `counter-child-1` now maps to *inner B's* props.
-The next action on outer A replays those props and A renders as "inner B" —
-props, not just state, cross between instances.
+In `/case8`, re-rendering only the wrapper subtree used to renumber its inner
+child from 1 and collide with outer A's id, which corrupted the server-side
+init-args registry and made outer A render with inner B's props. With
+path-based ids the inner child keeps `counter-child-0.1.0` in every pass.
 
-## Summary of the root causes
+### Case 9 — `key` for list children
 
-1. **Nested state is never restored.** `expand-child-component` hardcodes a
-   `nil` state, and `handle-action` only uses the target node of the state tree
-   the client sent. Any component other than the action target re-initialises.
-2. **Actions are routed by DOM proximity, not by who defines them.**
-   `findActionTarget` picks the nearest stateful ancestor; an action name that
-   does not exist there is dropped with a stdout warning and a 200 response.
-3. **`component-id`s are positional, not identity-based.** They are
-   `<name>-<render counter>`, and the counter is per render pass, so ids shift
-   between a full render and a partial re-render and can even be duplicated
-   across two live instances — which also corrupts the server-side init-args
-   registry that is keyed by them.
+Children in a list are numbered by position, so deleting or re-ordering items
+moves state from one item to another. Pass `key` to give a child an identity
+that survives the change — the key replaces the positional segment of the id
+(`counter-child-0.0.kalpha`).
 
-## Working within today's behaviour
+```lisp
+(counter-child (@ (key ,name) (label ,name)))
+```
 
-Case 7 is the pattern that holds up: keep every piece of state in the root
-component, make children purely presentational, and pass values plus callback
-S-expressions down as props — the approach `sample/02-todo` uses. In particular:
+Giving three children counts, then clicking `rotate` (first item to the end):
 
-* Do not rely on a nested component's own state surviving an ancestor's action.
-* Do not render a parent callback inside a stateful child. If a UI component
-  offers a controlled mode (for example `checkbox` with `checked` + `onclick`),
-  use it so the component stays stateless and the action reaches the root.
+```
+with key    : bravo=0   charlie=0  alpha=3    <- alpha's count moved with alpha
+without key : bravo=5   charlie=0  alpha=0    <- position 0 kept the count
+```
 
-## Directions for a fix
+`key` only matters for children that own state (or that wrap something which
+does). A purely presentational list needs no key.
 
-* Restore nested state during expansion: thread the client's collected state
-  tree through `expand-child-component` instead of passing `nil`.
-* Give components stable identity — an explicit `key`/`id` prop folded into the
-  generated `component-id`, or a path-based id (`root.0.1`) instead of a global
-  counter — so ids survive partial re-renders.
-* Resolve an action by searching the ancestor chain for the component that
-  actually defines it, or encode the defining component's id into the action
-  payload at render time; and return an error to the client when no handler is
-  found instead of a silent 200.
+## What to keep in mind
+
+* State lives wherever you declare it, but a component that is *not* in the DOM
+  the browser reported — a newly rendered one — starts from its props.
+* Use `key` for stateful children inside a list.
+* Do not render a parent callback inside a stateful child until #32 is fixed.
+* A component whose root element carries an explicit `id` attribute is addressed
+  by that id instead of by its path. Its own state is then not restored on a
+  parent re-render, because the state lookup happens before the element is
+  rendered and can only use the path.
+
+## Testing nested behaviour
+
+`cl-s3r.testing:test-render-html` renders a component tree to HTML and can stand
+in for the state the browser would have reported, which is what `test.lisp`
+asserts against:
+
+```lisp
+(test-render-html "case3-app"
+                  :state '(:parent-count 7)
+                  :client-state '(("counter-child-0.0" . (:count 2))))
+```
+
+Pass `:path` and `:forced-id` to reproduce the render pass the server performs
+for a single subtree.
