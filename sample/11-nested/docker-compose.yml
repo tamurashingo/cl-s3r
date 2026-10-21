@@ -1,0 +1,9 @@
+services:
+  app:
+    build:
+      context: ../../
+      dockerfile: sample/11-nested/Dockerfile
+    ports:
+      - "${PORT:-5011}:${PORT:-5011}"
+    environment:
+      - PORT=${PORT:-5011}
