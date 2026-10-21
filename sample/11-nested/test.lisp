@@ -14,7 +14,8 @@
 
 (deftest test-all-case-components-render
   (dolist (name '("nested-index" "case1-app" "case2-app" "case3-app" "case4-app"
-                  "case5-app" "case6-app" "case7-app" "case8-app" "case9-app"))
+                  "case5-app" "case6-app" "case7-app" "case8-app" "case9-app"
+                  "case10-app"))
     (testing name
       (let ((result (test-render-component name :args '())))
         (ok (not (null (getf result :sexp))))))))
@@ -152,3 +153,34 @@
       ;; ... while the unkeyed row's first position kept the count of whatever
       ;; child used to sit there.
       (ok (search "&quot;COUNT&quot;:5" html)))))
+
+;;; ---------------------------------------------------------------------------
+;;; Actions are advertised and routed to the component that defines them (case 4)
+;;; ---------------------------------------------------------------------------
+
+(deftest test-components-advertise-their-own-actions
+  (testing "each component lists only the actions its own let-function registered"
+    (let ((html (test-render-html "case4-app")))
+      (ok (search "data-actions=\"parent-bump\"" html))
+      (ok (search "data-actions=\"wrapper-hit\"" html))))
+
+  (testing "a stateless child advertises nothing"
+    (let ((html (test-render-html "plain-child"
+                                  :args '(:label "x" :on-click (parent-bump)))))
+      (ok (search "data-component=\"plain-child\"" html))
+      (ng (search "data-actions" html)))))
+
+(deftest test-unknown-action-is-reported
+  (testing "dispatching an action no component defines signals action-not-found"
+    (let ((condition
+            (handler-case
+                (progn
+                  (cl-s3r.component:call-component-action
+                   "case1-app" "no-such-action" nil '(:parent-count 0))
+                  nil)
+              (cl-s3r.component:action-not-found (e) e))))
+      (ok condition)
+      (ok (string-equal "no-such-action"
+                        (cl-s3r.component:action-not-found-action condition)))
+      (ok (equal '("parent-bump")
+                 (cl-s3r.component:action-not-found-available condition))))))

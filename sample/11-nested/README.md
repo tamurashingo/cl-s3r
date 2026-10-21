@@ -3,7 +3,7 @@
 A diagnostic sample. Each route isolates one nesting pattern so that the
 behaviour of nested components can be observed without one case disturbing
 another. It doubles as the reproduction case for the nested-component issues
-#31, #32 and #33.
+#31, #32 and #33, and is covered by `e2e/tests/11-nested.spec.js`.
 
 ## Running
 
@@ -47,12 +47,13 @@ Verified in Chromium against a locally running server.
 | 1 | `/case1` | stateless child invokes a parent action | works |
 | 2 | `/case2` | stateful child invokes its own action | works |
 | 3 | `/case3` | stateful child, then the parent re-renders | works — child keeps its state (#31) |
-| 4 | `/case4` | parent action rendered inside a stateful child | **action silently dropped — open (#32)** |
+| 4 | `/case4` | parent action rendered inside a stateful child | works — the action reaches the component that defines it (#32) |
 | 5 | `/case5` | two instances of the same stateful child | works — each keeps its own state (#31, #33) |
 | 6 | `/case6` | the same patterns three levels deep | depth changes nothing |
 | 7 | `/case7` | all state lifted to the root, children stateless | works |
 | 8 | `/case8` | stateful child inside a stateful child | works — ids stay unique (#33) |
 | 9 | `/case9` | stateful children in a list, with and without `key` | `key` follows the item; without it, state follows the position |
+| 10 | `/case10` | an action no component defines | the server answers 422 and the client logs it |
 
 ### Case 3 — a parent re-render keeps the nested child's state
 
@@ -69,30 +70,32 @@ nested component picks its own state back up instead of re-initialising from its
 props. A component that was not in the tree — a list item that has just been
 added, a branch that has just been expanded — still starts from its props.
 
-### Case 4 — a parent action inside a stateful child never runs (open)
+### Case 4 — a parent action inside a stateful child
 
-The button carries `data-on-click='["PARENT-BUMP"]'`, but nothing happens and no
-error appears in the browser console. The POST body shows why:
+The button sits inside `stateful-wrapper`, which has state and an action of its
+own, and carries `data-on-click='["PARENT-BUMP"]'`. It is dispatched to the root:
 
 ```json
 {"action":["PARENT-BUMP"],
- "component-id":"stateful-wrapper-0.0",
+ "component-id":"case4-app-0",
  "state":{"component":"case4-app", ...}}
 ```
 
-`findActionTarget` (`src/client/cl-runtime.js`) walks up to the *nearest ancestor
-with a non-empty `data-state`*, which is the wrapper, not the root that defines
-`parent-bump`. The server then looks for `parent-bump` in `stateful-wrapper` and
-only logs to stdout:
+Each component advertises the actions its `let-function` registered, and the
+client walks up from the clicked element to the nearest ancestor that advertises
+the one being fired:
 
-```
-Warning: Action PARENT-BUMP not found in component stateful-wrapper (Available: ("wrapper-hit"))
+```html
+<div data-component="case4-app"        data-actions="parent-bump">
+  <div data-component="stateful-wrapper" data-actions="wrapper-hit">
+    <div data-component="plain-child">
+      <button data-on-click='["PARENT-BUMP"]'>
 ```
 
-Tracked in #32. Until it is fixed: do not render a parent callback inside a
-stateful child. If a UI component offers a controlled mode (for example
-`checkbox` with `checked` + `onclick`), use it so the component stays stateless
-and the action reaches the root.
+`wrapper-hit` clicked inside the wrapper still goes to the wrapper; the wrapper's
+own state is untouched by `parent-bump`. This used to be routed to the nearest
+*stateful* ancestor instead, so the action ended up at the wrapper, which does
+not define it, and was dropped with a stdout-only warning.
 
 ### Case 5 and 8 — ids are stable and unique
 
@@ -135,12 +138,34 @@ without key : bravo=5   charlie=0  alpha=0    <- position 0 kept the count
 `key` only matters for children that own state (or that wrap something which
 does). A purely presentational list needs no key.
 
+### Case 10 — an action nobody defines
+
+The lower button is bound to `(no-such-action)`. No component advertises it, so
+the request goes to the root, which does not define it either, and the server
+answers `422`:
+
+```json
+{"error":"action not found","action":"NO-SUCH-ACTION",
+ "component":"case10-app","available":["parent-bump"]}
+```
+
+The client logs that to the console:
+
+```
+cl-s3r: action "NO-SUCH-ACTION" is not defined in component "case10-app" (available: parent-bump)
+```
+
+A dropped action used to be a 200 with unchanged HTML, which is why a mis-routed
+callback was so hard to spot.
+
 ## What to keep in mind
 
 * State lives wherever you declare it, but a component that is *not* in the DOM
   the browser reported — a newly rendered one — starts from its props.
 * Use `key` for stateful children inside a list.
-* Do not render a parent callback inside a stateful child until #32 is fixed.
+* An action is a round trip. Clicking the same button again before the response
+  lands sends the same state twice, so the second click is lost — the e2e spec
+  asserts between clicks for that reason.
 * A component whose root element carries an explicit `id` attribute is addressed
   by that id instead of by its path. Its own state is then not restored on a
   parent re-render, because the state lookup happens before the element is

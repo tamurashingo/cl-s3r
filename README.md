@@ -169,9 +169,24 @@ Child components are written as non-keyword symbols in the parent's S-expression
                        (on-delete (delete-todo))))))))
 ```
 
-**Design principle:** All actions are defined in the root component. Child components are purely presentational — they receive data and callback S-expressions as props, emit them as `data-on-click` / `data-on-submit` attributes, and the client always routes actions to the root component.
+**Design principle:** Actions live in the component that owns the state they change — usually the root. Child components are purely presentational: they receive data and callback S-expressions as props and emit them as `data-on-click` / `data-on-submit` attributes.
 
-> A parent callback must not be rendered *inside* a child that has its own state: the client routes the action to the nearest stateful ancestor, so the callback never reaches the component that defines it. See `sample/11-nested` (`/case4`).
+### Action Routing
+
+Every component advertises the actions its own `let-function` registered, in a `data-actions` attribute:
+
+```html
+<div data-component="todo" data-component-id="todo-0"
+     data-actions="add-todo toggle-done delete-todo">
+```
+
+When an event fires, the client walks up from the element to the nearest ancestor that advertises that action and dispatches to it. A callback passed down as a prop therefore reaches the component that defines it, even when it is rendered inside a child that has state of its own.
+
+If no ancestor advertises the action, the request is sent to the root component and the server answers `422` with the action name, the component it reached, and the actions that component does define. The client logs it:
+
+```
+cl-s3r: action "NO-SUCH-ACTION" is not defined in component "todo" (available: add-todo, toggle-done, delete-todo)
+```
 
 ### Component Identity and Nested State
 
@@ -685,7 +700,7 @@ Return value shape:
 
 | Key | Content |
 |---|---|
-| `:SEXP` | Rendered S-expression with `data-state` / `data-component` stripped — use this for structural assertions |
+| `:SEXP` | Rendered S-expression with the injected `data-state` / `data-component` / `data-component-id` / `data-actions` attributes stripped — use this for structural assertions |
 | `:RAW-SEXP` | Rendered S-expression as-is — use this to verify serialized state JSON |
 | `:STATE` | Component state as a plist, e.g. `(:COUNT 5)` |
 
@@ -956,6 +971,7 @@ The `make test` command uses `docker compose run --rm playwright`, which automat
 | `tests/03-books.spec.js` | Books (5003) | Full list, search filter, empty result, detail page, back navigation |
 | `tests/04-login.spec.js` | Login (5004) | Login form, invalid credentials, valid login, logout, unauthenticated redirect |
 | `tests/06-error-handling.spec.js` | Error Handling (5006) | Item list, detail page, 404 on missing item, 500 on crash, navigation from error page |
+| `tests/11-nested.spec.js` | Nested components (5011) | Action routing into and out of stateful children, nested state across a parent re-render, id stability, `key` in lists, 422 on an undefined action |
 
 The tests can also be run against locally running sample apps without Docker by setting environment variables:
 
@@ -965,6 +981,7 @@ TODO_URL=http://localhost:5002 \
 BOOKS_URL=http://localhost:5003 \
 LOGIN_URL=http://localhost:5004 \
 ERROR_HANDLING_URL=http://localhost:5006 \
+NESTED_URL=http://localhost:5011 \
 npx playwright test
 ```
 

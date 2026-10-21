@@ -158,6 +158,15 @@ export async function sendAction(action, componentElement, rootElement,
       return;
     }
 
+    if (response.status === 422) {
+      const detail = await response.json().catch(() => ({}));
+      const available = Array.isArray(detail.available) ? detail.available.join(', ') : '';
+      console.error(
+        `cl-s3r: action "${detail.action}" is not defined in component "${detail.component}"` +
+        (available ? ` (available: ${available})` : ''));
+      return;
+    }
+
     if (!response.ok) throw new Error('Network response was not ok');
 
     const result = await response.json();
@@ -193,25 +202,19 @@ export async function sendAction(action, componentElement, rootElement,
 }
 
 /**
- * Find the component element that should handle the action.
- * Walks up the component tree to find the nearest ancestor with non-empty state,
- * skipping stateless presentational components (data-state="{}").
- * Falls back to the root element if no stateful component is found.
+ * Find the component element that should handle the action named ACTION-NAME.
+ * Walks up the component tree for the nearest ancestor that advertises the action
+ * in its `data-actions` list, i.e. the component whose `let-function` defines it.
+ * This is what lets a callback passed down as a prop reach the component that
+ * owns it, even when it is rendered inside a child that has state of its own.
+ * Falls back to the root element when no ancestor claims the action.
  */
-function findActionTarget(element, mountContainer) {
+function findActionTarget(element, actionName, mountContainer) {
+  const wanted = String(actionName || '').toLowerCase();
   let el = element.closest('[data-component]');
   while (el && el !== mountContainer) {
-    const stateStr = el.getAttribute('data-state');
-    let isEmpty = true;
-    if (stateStr) {
-      try {
-        const s = JSON.parse(stateStr);
-        isEmpty = !s || (typeof s === 'object' && !Array.isArray(s) && Object.keys(s).length === 0);
-      } catch (e) {
-        isEmpty = false;
-      }
-    }
-    if (!isEmpty) return el;
+    const actions = (el.getAttribute('data-actions') || '').split(/\s+/).filter(Boolean);
+    if (actions.includes(wanted)) return el;
     const parent = el.parentElement;
     el = parent ? parent.closest('[data-component]') : null;
   }
@@ -220,7 +223,7 @@ function findActionTarget(element, mountContainer) {
 
 /**
  * Initialize event delegation (click and submit handlers).
- * Actions are routed to the nearest stateful ancestor component element.
+ * Actions are routed to the component that defines them (see findActionTarget).
  */
 export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpired = null } = {}) {
   const mountContainer = document.querySelector(rootSelector);
@@ -231,7 +234,7 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpire
     event.preventDefault();
     try {
       const action = JSON.parse(trigger.getAttribute('data-on-click'));
-      const owningComp = findActionTarget(trigger, mountContainer);
+      const owningComp = findActionTarget(trigger, action[0], mountContainer);
       const root = mountContainer.firstElementChild;
       if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
     } catch (e) {
@@ -246,8 +249,8 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpire
     try {
       const action = JSON.parse(form.getAttribute('data-on-submit'));
       const formData = Object.fromEntries(new FormData(form).entries());
+      const owningComp = findActionTarget(form, action[0], mountContainer);
       action.push(formData);
-      const owningComp = findActionTarget(form, mountContainer);
       const root = mountContainer.firstElementChild;
       if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
       form.reset();

@@ -31,7 +31,11 @@
            #:http-error
            #:http-error-status-code
            #:http-error-params
-           #:signal-http-error))
+           #:signal-http-error
+           #:action-not-found
+           #:action-not-found-action
+           #:action-not-found-component
+           #:action-not-found-available))
 
 (in-package #:cl-s3r.component)
 
@@ -52,6 +56,16 @@
    (params :initarg :params :initform nil :reader http-error-params))
   (:report (lambda (c s)
              (format s "HTTP ~A" (http-error-status-code c)))))
+
+(define-condition action-not-found (error)
+  ((action :initarg :action :reader action-not-found-action)
+   (component :initarg :component :reader action-not-found-component)
+   (available :initarg :available :initform nil :reader action-not-found-available))
+  (:report (lambda (c s)
+             (format s "Action ~A not found in component ~A (available: ~S)"
+                     (action-not-found-action c)
+                     (action-not-found-component c)
+                     (action-not-found-available c)))))
 
 (defun signal-http-error (code &rest params)
   "Signal an HTTP error condition with STATUS-CODE and optional PARAMS keyword args.
@@ -169,10 +183,19 @@ follows the child around when siblings are re-ordered, inserted or removed."
                  collect `(setf (getf *current-component-state* (make-keyword (string ',var))) ,var))))))
 
 (defmacro define-component (name args &body body)
-  (let ((component-name (string-downcase (string name))))
+  (let ((component-name (string-downcase (string name)))
+        (mark (gensym "ACTION-MARK"))
+        (own (gensym "OWN-ACTIONS")))
     `(progn
        (defun ,name ,args
-         (let ((result (progn ,@body)))
+         ;; MARK records where *current-component-functions* stood before the body
+         ;; ran, so the functions this component registered -- and only those -- can
+         ;; be advertised in data-actions for the client to route actions by.
+         (let* ((,mark *current-component-functions*)
+                (result (progn ,@body))
+                (,own (remove-duplicates
+                       (mapcar #'car (ldiff *current-component-functions* ,mark))
+                       :test #'string= :from-end t)))
            (if (and (listp result) (keywordp (car result)))
                (let* ((tag (car result))
                       (rest (cdr result))
@@ -201,16 +224,21 @@ follows the child around when siblings are re-ordered, inserted or removed."
                  (when *current-render-registry*
                    (setf (gethash component-id *current-render-registry*)
                          (list :args *current-component-init-args* :path path)))
-                 (if has-attrs
-                     `(,tag (@ (data-state ,state-json)
-                               (data-component ,(string ,component-name))
-                               (data-component-id ,component-id)
-                               ,@(cdar rest))
-                            ,@(cdr rest))
-                     `(,tag (@ (data-state ,state-json)
-                               (data-component ,(string ,component-name))
-                               (data-component-id ,component-id))
-                            ,@rest)))
+                 (let ((actions-attr
+                        (when ,own
+                          `((data-actions ,(format nil "~{~A~^ ~}" ,own))))))
+                   (if has-attrs
+                       `(,tag (@ (data-state ,state-json)
+                                 (data-component ,(string ,component-name))
+                                 (data-component-id ,component-id)
+                                 ,@actions-attr
+                                 ,@(cdar rest))
+                              ,@(cdr rest))
+                       `(,tag (@ (data-state ,state-json)
+                                 (data-component ,(string ,component-name))
+                                 (data-component-id ,component-id)
+                                 ,@actions-attr)
+                              ,@rest))))
                result)))
 
        (setf (gethash ,component-name *component-registry*)
@@ -258,13 +286,17 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
             (let ((action-fn (cdr (assoc (string action-name)
                                         *current-component-functions*
                                         :test #'string-equal))))
-              (if action-fn
-                  (progn
-                    (apply action-fn args)
-                    (when *sync-component-state*
-                      (funcall *sync-component-state*)))
-                  (format t "Warning: Action ~A not found in component ~A (Available: ~S)~%"
-                          action-name component-name (mapcar #'car *current-component-functions*))))
+              (unless action-fn
+                ;; Signalled rather than logged: a dropped action used to look like a
+                ;; successful request to the browser, which made a mis-routed callback
+                ;; invisible. handle-action turns this into an error response.
+                (error 'action-not-found
+                       :action action-name
+                       :component component-name
+                       :available (mapcar #'car *current-component-functions*)))
+              (apply action-fn args)
+              (when *sync-component-state*
+                (funcall *sync-component-state*)))
 
             ;; Re-render with updated state, preserving component ID.
             ;; COMPONENT-PATH is this instance's position in the page, replayed from

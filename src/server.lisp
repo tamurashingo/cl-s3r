@@ -17,7 +17,11 @@
                 #:call-metadata
                 #:http-error
                 #:http-error-status-code
-                #:http-error-params)
+                #:http-error-params
+                #:action-not-found
+                #:action-not-found-action
+                #:action-not-found-component
+                #:action-not-found-available)
   (:import-from #:cl-s3r.cookie
                 #:*current-cookies*
                 #:*pending-cookie-changes*
@@ -442,12 +446,28 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                          target-component-id
                          (not (string= target-component-id "")))
                 (gethash target-component-id render-registry))))
-        (let ((result (call-component-action component-name action-name action-args
-                                             state-plist
-                                             :forced-component-id target-component-id
-                                             :component-init-args (getf registry-entry :args)
-                                             :component-path (getf registry-entry :path)
-                                             :client-state-tree client-states)))
+        (let ((result (handler-case
+                        (call-component-action component-name action-name action-args
+                                               state-plist
+                                               :forced-component-id target-component-id
+                                               :component-init-args (getf registry-entry :args)
+                                               :component-path (getf registry-entry :path)
+                                               :client-state-tree client-states)
+                        (action-not-found (e)
+                          ;; The action reached a component that does not define it.
+                          ;; Answer with an error so the browser can report it instead
+                          ;; of treating a no-op as a successful update.
+                          (format *error-output* "~A~%" e)
+                          (return-from handle-action
+                            `(422 (:content-type "application/json")
+                                  (,(jonathan:to-json
+                                     `(:|error| "action not found"
+                                       :|action| ,(princ-to-string
+                                                   (action-not-found-action e))
+                                       :|component| ,(princ-to-string
+                                                      (action-not-found-component e))
+                                       :|available| ,(or (action-not-found-available e)
+                                                         #()))))))))))
           ;; Merge the entries registered during this pass back into the token's
           ;; registry. Paths are stable, so these normally overwrite an instance's
           ;; own entry with identical data; the merge matters for children that only
