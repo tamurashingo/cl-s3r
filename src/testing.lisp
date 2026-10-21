@@ -18,7 +18,7 @@
 (in-package #:cl-s3r.testing)
 
 (defun strip-component-metadata (sexp)
-  "Remove data-state and data-component from the outermost (@ ...) attribute list only."
+  "Remove the framework-injected attributes from the outermost (@ ...) list only."
   (if (and (listp sexp) (keywordp (car sexp)))
       (let* ((tag (car sexp))
              (rest (cdr sexp))
@@ -31,7 +31,8 @@
                    (filtered (remove-if
                                (lambda (attr)
                                  (member (string-downcase (string (car attr)))
-                                         '("data-state" "data-component" "data-component-id")
+                                         '("data-state" "data-component" "data-component-id"
+                                           "data-actions")
                                          :test #'string=))
                                attrs)))
               (if filtered

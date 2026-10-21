@@ -25,7 +25,8 @@
     ("/case6" . "6. depth-3 nesting")
     ("/case7" . "7. lifted state (recommended pattern)")
     ("/case8" . "8. component-id reuse across partial re-renders")
-    ("/case9" . "9. stateful children in a list, with and without key")))
+    ("/case9" . "9. stateful children in a list, with and without key")
+    ("/case10" . "10. an action no component defines")))
 
 (define-layout app-layout (&key children &allow-other-keys)
   `(:html (@ (lang "en"))
@@ -366,6 +367,35 @@ ul.index a { color: #2980b9; text-decoration: none; }
                                                 (start 0))))))))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Case 10: an action that no component defines
+;;; ---------------------------------------------------------------------------
+
+(define-component case10-app (&key &allow-other-keys)
+  (let-component-state ((parent-count 0))
+    (let-function ((parent-bump ()
+                     (incf parent-count)))
+      `(:div
+         (:h2 "Case 10: an action no component defines")
+         (:p (@ (class "steps"))
+           (:b "Steps: ") "open the browser console and click the lower button, which "
+           "is bound to an action nobody defines. "
+           (:b "Expected: ") "the server answers 422 and the client logs the action "
+           "and the component it reached, instead of silently doing nothing.")
+         (:div (@ (class "parent"))
+           (:div (@ (class "parent-head"))
+             (:span (@ (class "tag")) "root")
+             (:span (@ (class "label")) "parent-count")
+             (:span (@ (class "parent-count count")) ,parent-count))
+           (:div (@ (class "child child--stateless"))
+             (:span (@ (class "label")) "defined action")
+             (:button (@ (class "defined-action") (onclick (parent-bump))) "parent +1"))
+           (:div (@ (class "child child--stateless"))
+             (:span (@ (class "label")) "undefined action")
+             (:button (@ (class "undefined-action")
+                         (onclick (no-such-action)))
+               "call a missing action")))))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Routes
 ;;; ---------------------------------------------------------------------------
 
@@ -379,3 +409,4 @@ ul.index a { color: #2980b9; text-decoration: none; }
 (configure-route :path "/case7" :component "case7-app"    :props '())
 (configure-route :path "/case8" :component "case8-app"    :props '())
 (configure-route :path "/case9" :component "case9-app"    :props '())
+(configure-route :path "/case10" :component "case10-app"  :props '())
