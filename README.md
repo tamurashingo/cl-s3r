@@ -169,7 +169,50 @@ Child components are written as non-keyword symbols in the parent's S-expression
                        (on-delete (delete-todo))))))))
 ```
 
-**Design principle:** All actions are defined in the root component. Child components are purely presentational — they receive data and callback S-expressions as props, emit them as `data-on-click` / `data-on-submit` attributes, and the client always routes actions to the root component.
+**Design principle:** Actions live in the component that owns the state they change — usually the root. Child components are purely presentational: they receive data and callback S-expressions as props and emit them as `data-on-click` / `data-on-submit` attributes.
+
+### Action Routing
+
+Every component advertises the actions its own `let-function` registered, in a `data-actions` attribute:
+
+```html
+<div data-component="todo" data-component-id="todo-0"
+     data-actions="add-todo toggle-done delete-todo">
+```
+
+When an event fires, the client walks up from the element to the nearest ancestor that advertises that action and dispatches to it. A callback passed down as a prop therefore reaches the component that defines it, even when it is rendered inside a child that has state of its own.
+
+If no ancestor advertises the action, the request is sent to the root component and the server answers `422` with the action name, the component it reached, and the actions that component does define. The client logs it:
+
+```
+cl-s3r: action "NO-SUCH-ACTION" is not defined in component "todo" (available: add-todo, toggle-done, delete-todo)
+```
+
+### Component Identity and Nested State
+
+A child component may declare its own `let-component-state`. Each instance is identified by a `component-id` built from its position in the tree — the root is `0`, and every child appends its own segment:
+
+```html
+<div data-component="case5-app"      data-component-id="case5-app-0">
+  <div data-component="counter-child" data-component-id="counter-child-0.0" data-state='{"COUNT":1}'>
+  <div data-component="counter-child" data-component-id="counter-child-0.1" data-state='{"COUNT":2}'>
+```
+
+Because the path does not depend on the render pass, re-rendering one subtree produces the same ids as a full page render. On every action the client POSTs the whole state tree, and the server restores each nested component's state by id — so a parent's re-render no longer resets its children. A component that was not in the tree the browser reported (a list item that has just been added, for instance) starts from its props.
+
+#### `key`
+
+Children in a list are numbered by position, so re-ordering or deleting items moves state from one item to another. Pass `key` to give a child an identity that survives the change — the key replaces the positional segment of the id (`todo-item-0.1.k7`):
+
+```lisp
+(define-component todo-list (&key todos &allow-other-keys)
+  `(:ul
+     ,@(loop for todo in todos
+             collect `(todo-item (@ (key   ,(getf todo :id))
+                                    (title ,(getf todo :title)))))))
+```
+
+`key` only matters for children that own state, or that wrap something which does.
 
 ### Form Submission
 
@@ -646,6 +689,9 @@ Use `configure-static-dir` to serve app-specific assets (CSS, images, fonts). Th
 ;; Execute an action against a state. Returns the same plist shape.
 (test-call-action component-name action-name &key state args action-args)
 
+;; Render a component tree to HTML, with nested components expanded.
+(test-render-html component-name &key args state client-state path forced-id)
+
 ;; Extract a key from a state plist (case-insensitive). Returns the full plist when KEY is omitted.
 (test-get-state state &optional key)
 ```
@@ -654,7 +700,7 @@ Return value shape:
 
 | Key | Content |
 |---|---|
-| `:SEXP` | Rendered S-expression with `data-state` / `data-component` stripped — use this for structural assertions |
+| `:SEXP` | Rendered S-expression with the injected `data-state` / `data-component` / `data-component-id` / `data-actions` attributes stripped — use this for structural assertions |
 | `:RAW-SEXP` | Rendered S-expression as-is — use this to verify serialized state JSON |
 | `:STATE` | Component state as a plist, e.g. `(:COUNT 5)` |
 
@@ -670,6 +716,28 @@ Return value shape:
                                             :args  '(:initial-count 0))))
   (cl-s3r.testing:test-get-state (getf r2 :state) :count))
 ;; => 1
+```
+
+### Testing Nested Components
+
+`test-render-component` returns the component's own S-expression, with nested
+component calls left unexpanded. To assert on a whole tree — and on the state
+nested components restore — use `test-render-html`, which renders to HTML the
+way the server does:
+
+```lisp
+;; :client-state stands in for the state tree the browser would have reported
+(cl-s3r.testing:test-render-html "case3-app"
+                                 :state        '(:parent-count 7)
+                                 :client-state '(("counter-child-0.0" . (:count 2))))
+;; => "<div data-state=\"{&quot;PARENT-COUNT&quot;:7}\" ... &quot;COUNT&quot;:2 ..."
+```
+
+`:path` and `:forced-id` reproduce the render pass the server performs when an
+action re-renders a single subtree:
+
+```lisp
+(cl-s3r.testing:test-render-html "case5-app" :path '("0") :forced-id "case5-app-0")
 ```
 
 ### Notes on `let-function` and Unused Parameters
@@ -903,6 +971,7 @@ The `make test` command uses `docker compose run --rm playwright`, which automat
 | `tests/03-books.spec.js` | Books (5003) | Full list, search filter, empty result, detail page, back navigation |
 | `tests/04-login.spec.js` | Login (5004) | Login form, invalid credentials, valid login, logout, unauthenticated redirect |
 | `tests/06-error-handling.spec.js` | Error Handling (5006) | Item list, detail page, 404 on missing item, 500 on crash, navigation from error page |
+| `tests/11-nested.spec.js` | Nested components (5011) | Action routing into and out of stateful children, nested state across a parent re-render, id stability, `key` in lists, 422 on an undefined action |
 
 The tests can also be run against locally running sample apps without Docker by setting environment variables:
 
@@ -912,6 +981,7 @@ TODO_URL=http://localhost:5002 \
 BOOKS_URL=http://localhost:5003 \
 LOGIN_URL=http://localhost:5004 \
 ERROR_HANDLING_URL=http://localhost:5006 \
+NESTED_URL=http://localhost:5011 \
 npx playwright test
 ```
 

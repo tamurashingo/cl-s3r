@@ -7,16 +7,18 @@
                 #:*current-component-state*
                 #:*current-component-functions*
                 #:*sync-component-state*
-                #:*component-render-counter*
-                #:*forced-component-id*)
+                #:*forced-component-id*
+                #:*component-path*
+                #:render-component-tree-html)
   (:export #:test-render-component
            #:test-call-action
+           #:test-render-html
            #:test-get-state))
 
 (in-package #:cl-s3r.testing)
 
 (defun strip-component-metadata (sexp)
-  "Remove data-state and data-component from the outermost (@ ...) attribute list only."
+  "Remove the framework-injected attributes from the outermost (@ ...) list only."
   (if (and (listp sexp) (keywordp (car sexp)))
       (let* ((tag (car sexp))
              (rest (cdr sexp))
@@ -29,7 +31,8 @@
                    (filtered (remove-if
                                (lambda (attr)
                                  (member (string-downcase (string (car attr)))
-                                         '("data-state" "data-component" "data-component-id")
+                                         '("data-state" "data-component" "data-component-id"
+                                           "data-actions")
                                          :test #'string=))
                                attrs)))
               (if filtered
@@ -49,7 +52,7 @@ Returns a plist with :SEXP (metadata stripped), :RAW-SEXP (as-is), and :STATE."
     (let ((*current-component-state* (copy-list initial-state))
           (*current-component-functions* nil)
           (*sync-component-state* nil)
-          (*component-render-counter* 0)
+          (*component-path* (list "0"))
           (*forced-component-id* nil))
       (let ((raw-sexp (apply (symbol-function func-name) args)))
         (list :sexp     (strip-component-metadata raw-sexp)
@@ -68,7 +71,7 @@ Returns a plist with :SEXP (metadata stripped), :RAW-SEXP (as-is), and :STATE."
     (let ((*current-component-state* (copy-list state))
           (*current-component-functions* nil)
           (*sync-component-state* nil)
-          (*component-render-counter* 0)
+          (*component-path* (list "0"))
           (*forced-component-id* nil))
       ;; Phase 1: dry-run with stored args to populate *current-component-functions*.
       ;; Passing args ensures closures inside let-function capture the correct prop values.
@@ -91,6 +94,29 @@ Returns a plist with :SEXP (metadata stripped), :RAW-SEXP (as-is), and :STATE."
           (list :sexp     (strip-component-metadata raw-sexp)
                 :raw-sexp raw-sexp
                 :state    (copy-list *current-component-state*)))))))
+
+(defun test-render-html (component-name &key args state client-state
+                                            path forced-id)
+  "Render COMPONENT-NAME to an HTML string with nested components expanded.
+ARGS is the prop plist and STATE the component's own state plist.
+CLIENT-STATE stands in for the state the browser would have reported for nested
+components: an alist of (component-id . state-plist), e.g.
+
+  :client-state \'((\"counter-child-0.0\" . (:count 2)))
+
+PATH is the component's position in the page -- a list of path segments,
+defaulting to the root position -- and FORCED-ID overrides its component-id.
+Pass both to reproduce the render pass the server performs when it re-renders a
+single subtree in response to an action."
+  (let ((table (when client-state
+                 (let ((h (make-hash-table :test 'equal)))
+                   (loop for (id . state-plist) in client-state
+                         do (setf (gethash id h) state-plist))
+                   h))))
+    (render-component-tree-html component-name state args
+                                :client-state-tree table
+                                :component-path path
+                                :forced-component-id forced-id)))
 
 (defun test-get-state (state &optional key)
   "Return STATE plist or a specific KEY's value (case-insensitive)."

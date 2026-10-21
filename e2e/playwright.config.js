@@ -64,5 +64,12 @@ module.exports = defineConfig({
       },
       testMatch: '**/10-checkbox.spec.js',
     },
+    {
+      name: 'nested',
+      use: {
+        baseURL: process.env.NESTED_URL || 'http://localhost:5011',
+      },
+      testMatch: '**/11-nested.spec.js',
+    },
   ],
 });

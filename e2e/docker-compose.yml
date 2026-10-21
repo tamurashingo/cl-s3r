@@ -127,6 +127,22 @@ services:
       retries: 15
       start_period: 120s
 
+  nested:
+    image: cl-s3r-sample-11-nested:latest
+    build:
+      context: ../
+      dockerfile: Dockerfile.sample
+      args:
+        SAMPLE_NAME: 11-nested
+    environment:
+      PORT: "5011"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5011/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
   playwright:
     build:
       context: .
@@ -148,6 +164,8 @@ services:
         condition: service_healthy
       checkbox:
         condition: service_healthy
+      nested:
+        condition: service_healthy
     environment:
       COUNTER_URL: "http://counter:5001"
       TODO_URL: "http://todo:5002"
@@ -157,3 +175,4 @@ services:
       DATA_TABLE_URL: "http://data-table:5008"
       DIALOG_URL: "http://dialog:5009"
       CHECKBOX_URL: "http://checkbox:5010"
+      NESTED_URL: "http://nested:5011"

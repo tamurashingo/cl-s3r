@@ -3,9 +3,8 @@
   (:import-from #:cl-s3r.testing
                 #:test-render-component
                 #:test-call-action
-                #:test-get-state)
-  (:import-from #:cl-s3r.component
-                #:render-component-html))
+                #:test-render-html
+                #:test-get-state))
 
 (in-package #:cl-s3r.sample.nested.test)
 
@@ -15,13 +14,14 @@
 
 (deftest test-all-case-components-render
   (dolist (name '("nested-index" "case1-app" "case2-app" "case3-app" "case4-app"
-                  "case5-app" "case6-app" "case7-app" "case8-app"))
+                  "case5-app" "case6-app" "case7-app" "case8-app" "case9-app"
+                  "case10-app"))
     (testing name
       (let ((result (test-render-component name :args '())))
         (ok (not (null (getf result :sexp))))))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Root-owned state behaves normally (this part of the model is sound)
+;;; Root-owned state
 ;;; ---------------------------------------------------------------------------
 
 (deftest test-root-action-updates-root-state
@@ -58,67 +58,129 @@
       (ok (equal '(11 10) (test-get-state (getf r3 :state) :counts))))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Characterisation tests for the nested-component problems.
-;;; These lock in the behaviour observed today so that a future fix shows up
-;;; here as a failure. See README.md in this directory for the full write-up.
+;;; Nested state is restored from what the browser reported (case 3, case 5)
 ;;; ---------------------------------------------------------------------------
 
-(deftest test-nested-child-state-is-dropped-on-a-parent-render
-  (testing "the parent's own state is carried into the render"
-    (let ((html (render-component-html "case3-app" '(:parent-count 7))))
-      (ok (search "&quot;PARENT-COUNT&quot;:7" html))))
+(deftest test-nested-child-state-is-restored
+  (testing "a child's state comes from the reported state tree, not from its props"
+    (let ((html (test-render-html "case3-app"
+                                  :state '(:parent-count 7)
+                                  :client-state '(("counter-child-0.0" . (:count 2))))))
+      (ok (search "&quot;PARENT-COUNT&quot;:7" html))
+      (ok (search "&quot;COUNT&quot;:2" html))))
 
-  (testing "the nested child is re-initialised instead of keeping its state"
-    ;; expand-child-component calls (render-component tag NIL ...), so a nested
-    ;; component never receives the state the client collected for it. A child
-    ;; that starts at 0 therefore always renders as 0, no matter what the browser
-    ;; had in its data-state attribute.
-    (let ((html (render-component-html "case3-app" '(:parent-count 7))))
-      (ok (search "&quot;COUNT&quot;:0" html))
-      (ng (search "&quot;COUNT&quot;:2" html)))))
+  (testing "a child with no reported state falls back to its initial value"
+    (let ((html (test-render-html "case3-app" :state '(:parent-count 7))))
+      (ok (search "&quot;COUNT&quot;:0" html))))
 
-(defun render-with-forced-root-id (name state id &rest args)
-  "Mimic the render pass that call-component-action performs for an action:
-the counter restarts at 0 and the target component's id is forced.
-ARGS are the init-args the server would replay from its registry."
-  (let ((cl-s3r.component:*component-render-counter* 0)
-        (cl-s3r.component:*forced-component-id* id)
-        (cl-s3r.renderer:*component-expander*
-          #'cl-s3r.component::expand-child-component))
-    (cl-s3r.renderer:render-html
-     (apply #'cl-s3r.component:render-component name state args))))
+  (testing "sibling instances restore their own state independently"
+    (let ((html (test-render-html "case5-app"
+                                  :client-state '(("counter-child-0.0" . (:count 1))
+                                                  ("counter-child-0.1" . (:count 102))))))
+      (ok (search "&quot;COUNT&quot;:1" html))
+      (ok (search "&quot;COUNT&quot;:102" html)))))
 
-(deftest test-component-ids-shift-between-render-passes
-  (testing "a full render numbers the root first, then its children"
-    (let ((html (render-component-html "case5-app" '())))
-      (ok (search "data-component-id=\"case5-app-1\"" html))
-      (ok (search "data-component-id=\"counter-child-2\"" html))
-      (ok (search "data-component-id=\"counter-child-3\"" html))))
+;;; ---------------------------------------------------------------------------
+;;; component-ids are stable and unique (case 5, case 8)
+;;; ---------------------------------------------------------------------------
 
-  (testing "an action re-render of the same tree numbers the children one lower"
-    ;; call-component-action resets *component-render-counter* to 0 and forces the
-    ;; target's id, so the forced id no longer consumes a number and every child
-    ;; shifts down by one. The id a child instance is addressed by is therefore not
-    ;; stable across render passes.
-    (let ((html (render-with-forced-root-id "case5-app" nil "case5-app-1")))
-      (ok (search "data-component-id=\"case5-app-1\"" html))
-      (ok (search "data-component-id=\"counter-child-1\"" html))
-      (ok (search "data-component-id=\"counter-child-2\"" html))
-      (ng (search "data-component-id=\"counter-child-3\"" html)))))
+(deftest test-component-ids-are-stable-across-render-passes
+  (testing "a full render numbers children relative to their parent"
+    (let ((html (test-render-html "case5-app")))
+      (ok (search "data-component-id=\"case5-app-0\"" html))
+      (ok (search "data-component-id=\"counter-child-0.0\"" html))
+      (ok (search "data-component-id=\"counter-child-0.1\"" html))))
 
-(deftest test-partial-re-render-can-duplicate-a-component-id
-  (testing "re-rendering only the wrapper subtree re-uses an id already taken"
-    ;; Case 8: after a root re-render, outer A owns "counter-child-1". When the
-    ;; wrapper alone is re-rendered for its own action, its inner child is also
-    ;; numbered 1 -- two live instances then share one component-id, and the
-    ;; server-side init-args registry keeps only the last one.
-    (let ((root-pass    (render-with-forced-root-id "case8-app" nil "case8-app-1"))
-          (wrapper-pass (render-with-forced-root-id
-                         "stateful-wrapper"
-                         nil
-                         "stateful-wrapper-2"
-                         :children '((counter-child (@ (label "inner B")
-                                                       (start 50)))))))
-      (ok (search "data-component-id=\"counter-child-1\"" root-pass))
-      (ok (search "outer A" root-pass))
-      (ok (search "data-component-id=\"counter-child-1\"" wrapper-pass)))))
+  (testing "an action re-render of the same tree produces the same ids"
+    ;; This is the pass call-component-action performs: the root's path is replayed
+    ;; from the registry and its id is forced.
+    (let ((html (test-render-html "case5-app"
+                                  :path '("0")
+                                  :forced-id "case5-app-0")))
+      (ok (search "data-component-id=\"counter-child-0.0\"" html))
+      (ok (search "data-component-id=\"counter-child-0.1\"" html)))))
+
+(deftest test-partial-re-render-keeps-ids-unique
+  (testing "re-rendering only the wrapper subtree keeps its child's own id"
+    ;; Case 8: outer A is counter-child-0.0 and the wrapper's inner child is
+    ;; counter-child-0.1.0. Re-rendering the wrapper alone must not hand its inner
+    ;; child outer A's id, which is what used to corrupt the init-args registry.
+    (let ((full (test-render-html "case8-app"))
+          (wrapper (test-render-html
+                    "stateful-wrapper"
+                    :args '(:children ((counter-child (@ (label "inner B")
+                                                         (start 50)))))
+                    :path '("0" "1")
+                    :forced-id "stateful-wrapper-0.1")))
+      (ok (search "data-component-id=\"counter-child-0.0\"" full))
+      (ok (search "data-component-id=\"counter-child-0.1.0\"" full))
+      (ok (search "data-component-id=\"counter-child-0.1.0\"" wrapper))
+      (ng (search "data-component-id=\"counter-child-0.0\"" wrapper)))))
+
+;;; ---------------------------------------------------------------------------
+;;; key keeps an identity through list changes (case 9)
+;;; ---------------------------------------------------------------------------
+
+(deftest test-key-prop-identifies-list-children
+  (testing "a key replaces the positional segment of the id"
+    (let ((html (test-render-html "case9-app")))
+      ;; upper row passes key, lower row does not
+      (ok (search "data-component-id=\"counter-child-0.0.kalpha\"" html))
+      (ok (search "data-component-id=\"counter-child-0.1.0\"" html))))
+
+  (testing "a keyed child keeps its id when the list is re-ordered"
+    (let* ((rotated (test-call-action "case9-app" "rotate"
+                                      :state (getf (test-render-component "case9-app"
+                                                                          :args '())
+                                                   :state)))
+           (html (test-render-html "case9-app" :state (getf rotated :state))))
+      (ok (equal '("bravo" "charlie" "alpha")
+                 (test-get-state (getf rotated :state) :items)))
+      (ok (search "data-component-id=\"counter-child-0.0.kalpha\"" html))))
+
+  (testing "a keyed child keeps the state reported for it after a re-order"
+    (let* ((rotated (test-call-action "case9-app" "rotate"
+                                      :state (getf (test-render-component "case9-app"
+                                                                          :args '())
+                                                   :state)))
+           (html (test-render-html
+                  "case9-app"
+                  :state (getf rotated :state)
+                  :client-state '(("counter-child-0.0.kalpha" . (:count 3))
+                                  ("counter-child-0.1.0"      . (:count 5))))))
+      ;; alpha moved to the end of the list but kept its count ...
+      (ok (search "&quot;COUNT&quot;:3" html))
+      ;; ... while the unkeyed row's first position kept the count of whatever
+      ;; child used to sit there.
+      (ok (search "&quot;COUNT&quot;:5" html)))))
+
+;;; ---------------------------------------------------------------------------
+;;; Actions are advertised and routed to the component that defines them (case 4)
+;;; ---------------------------------------------------------------------------
+
+(deftest test-components-advertise-their-own-actions
+  (testing "each component lists only the actions its own let-function registered"
+    (let ((html (test-render-html "case4-app")))
+      (ok (search "data-actions=\"parent-bump\"" html))
+      (ok (search "data-actions=\"wrapper-hit\"" html))))
+
+  (testing "a stateless child advertises nothing"
+    (let ((html (test-render-html "plain-child"
+                                  :args '(:label "x" :on-click (parent-bump)))))
+      (ok (search "data-component=\"plain-child\"" html))
+      (ng (search "data-actions" html)))))
+
+(deftest test-unknown-action-is-reported
+  (testing "dispatching an action no component defines signals action-not-found"
+    (let ((condition
+            (handler-case
+                (progn
+                  (cl-s3r.component:call-component-action
+                   "case1-app" "no-such-action" nil '(:parent-count 0))
+                  nil)
+              (cl-s3r.component:action-not-found (e) e))))
+      (ok condition)
+      (ok (string-equal "no-such-action"
+                        (cl-s3r.component:action-not-found-action condition)))
+      (ok (equal '("parent-bump")
+                 (cl-s3r.component:action-not-found-available condition))))))
