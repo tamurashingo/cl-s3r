@@ -38,6 +38,25 @@ function syncAttributes(oldEl, newEl) {
 }
 
 /**
+ * Push a <select>'s selection from the server's markup.
+ * Selectedness is a property, and once the user has picked an option the
+ * `selected` attribute no longer drives it -- so a server-controlled select needs
+ * this, for the same reason a checkbox needs `checked`. Called after the options
+ * have been morphed, so they exist to select.
+ */
+function syncSelect(oldEl, newEl) {
+  if (oldEl.multiple) {
+    const wanted = new Set(Array.from(newEl.selectedOptions).map((o) => o.value));
+    for (const option of oldEl.options) {
+      const selected = wanted.has(option.value);
+      if (option.selected !== selected) option.selected = selected;
+    }
+  } else if (oldEl.value !== newEl.value) {
+    oldEl.value = newEl.value;
+  }
+}
+
+/**
  * Morph OLDNODE to match NEWNODE, returning the live node that ended up in the
  * DOM -- OLDNODE itself when it could be reused, or its replacement when the
  * node type or tag differs.
@@ -64,6 +83,9 @@ function morphNode(oldNode, newNode) {
     }
     syncAttributes(oldNode, newNode);
     morphChildren(oldNode, newNode);
+    if (oldNode.tagName === 'SELECT') {
+      syncSelect(oldNode, newNode);
+    }
   }
   return oldNode;
 }
