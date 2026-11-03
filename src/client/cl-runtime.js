@@ -145,7 +145,10 @@ export async function sendAction(action, componentElement, rootElement,
   };
 
   try {
-    const response = await fetch(`${apiPrefix}/action`, {
+    // The page's query string travels with the action: the server rebuilds the root
+    // component's props from the route definition plus the URL, so it needs the same
+    // query parameters the page was rendered with.
+    const response = await fetch(`${apiPrefix}/action${window.location.search}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

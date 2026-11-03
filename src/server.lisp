@@ -6,9 +6,8 @@
                 #:*component-registry*
                 #:*layout-registry*
                 #:*error-page-registry*
-                #:*component-args-registry*
-                #:*current-render-registry*
                 #:*client-state-tree*
+                #:resolve-target-args
                 #:call-component-action
                 #:render-component
                 #:render-component-html
@@ -128,6 +127,33 @@ the DOM instead of being re-initialised from their props."
     (dolist (child (getf node :|children|))
       (collect-client-states child table)))
   table)
+
+(defun split-on-char (string char)
+  "Split STRING on CHAR, dropping empty pieces."
+  (loop with start = 0
+        with len = (length string)
+        for i from 0 to len
+        when (or (= i len) (char= (char string i) char))
+          append (when (> i start) (list (subseq string start i)))
+          and do (setf start (1+ i))))
+
+(defun component-id-path (component-id component-name)
+  "Return the tree path encoded in COMPONENT-ID, which is \"<name>-<dotted path>\".
+NIL when COMPONENT-ID does not have that shape for COMPONENT-NAME."
+  (when (and component-id component-name)
+    (let ((prefix (format nil "~A-" (string-downcase (string component-name)))))
+      (when (and (> (length component-id) (length prefix))
+                 (string= prefix component-id :end2 (length prefix)))
+        (split-on-char (subseq component-id (length prefix)) #\.)))))
+
+(defun route-root-props (config path-param-key param-value query-string)
+  "Build the props of a route's root component from the route definition and the URL.
+Nothing is remembered between requests: :props comes from the route definition,
+the path parameter from the URL, and the rest from the query string."
+  (append (getf config :props)
+          (when (and path-param-key param-value)
+            (list path-param-key (parse-param-value param-value)))
+          (parse-query-string query-string)))
 
 (defun configure-token-expired-behavior (mode &optional message)
   "Set the global behavior when the client receives a 409 render-token expired response.
@@ -414,15 +440,19 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
             (jonathan:parse json-str)))
         nil)))
 
-(defun handle-action (payload)
+(defun handle-action (payload root-component root-props)
+  "Execute an action and return the re-rendered subtree.
+
+ROOT-COMPONENT and ROOT-PROPS come from the route definition and the request URL,
+not from the client. Everything else about the page is reconstructed from them:
+the target's props by walking the tree down to it, and every component's state
+from what the browser reported."
   (let* ((action              (getf payload :|action|))
          (render-token        (getf payload :|render-token|))
          (target-component-id (getf payload :|component-id|))
          (root-state-node     (getf payload :|state|)))
 
     (unless (validate-render-token render-token)
-      ;; Clean up stale registry entry on token expiry.
-      (remhash render-token *component-args-registry*)
       (return-from handle-action
         '(409 (:content-type "application/json")
               ("{\"error\":\"render-token expired\"}"))))
@@ -439,19 +469,31 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
              ;; Every node's state, so the re-rendered subtree can restore its
              ;; nested components rather than reset them.
              (client-states (collect-client-states root-state-node))
-             ;; Look up the stored init-args and tree position for this instance.
-             (render-registry   (gethash render-token *component-args-registry*))
-             (registry-entry
-              (when (and render-registry
-                         target-component-id
-                         (not (string= target-component-id "")))
-                (gethash target-component-id render-registry))))
+             (target-path (or (component-id-path target-component-id component-name)
+                              (list "0")))
+             ;; Recompute the target's props by rendering only the ancestors named by
+             ;; its path. A page whose shape no longer matches what the browser holds
+             ;; is answered with 409, the same as an expired token, so the client reloads.
+             (target-args
+              (handler-case
+                  (let ((*client-state-tree* client-states))
+                    (multiple-value-bind (tag props)
+                        (resolve-target-args root-component root-props target-path)
+                      (unless (string-equal (string tag) (string component-name))
+                        (error "component at ~{~A~^.~} is ~A, not ~A"
+                               target-path tag component-name))
+                      props))
+                (error (e)
+                  (format *error-output* "Stale action for ~A: ~A~%" target-component-id e)
+                  (return-from handle-action
+                    '(409 (:content-type "application/json")
+                          ("{\"error\":\"stale component tree\"}")))))))
         (let ((result (handler-case
                         (call-component-action component-name action-name action-args
                                                state-plist
                                                :forced-component-id target-component-id
-                                               :component-init-args (getf registry-entry :args)
-                                               :component-path (getf registry-entry :path)
+                                               :component-init-args target-args
+                                               :component-path target-path
                                                :client-state-tree client-states)
                         (action-not-found (e)
                           ;; The action reached a component that does not define it.
@@ -468,14 +510,6 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                                                       (action-not-found-component e))
                                        :|available| ,(or (action-not-found-available e)
                                                          #()))))))))))
-          ;; Merge the entries registered during this pass back into the token's
-          ;; registry. Paths are stable, so these normally overwrite an instance's
-          ;; own entry with identical data; the merge matters for children that only
-          ;; appear after the action (a new list item, a newly expanded branch), which
-          ;; must be addressable by the actions dispatched to them next.
-          (when render-registry
-            (loop for k being the hash-keys of (getf result :registry) using (hash-value v)
-                  do (setf (gethash k render-registry) v)))
           (jonathan:to-json
            `(:|html| ,(getf result :html)
              :|state| ,(getf result :state))))))))
@@ -487,15 +521,10 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
     ;; Convert jonathan's :|key| style to uppercase :KEY keywords
     (let ((props-plist (loop for (k v) on props-raw by #'cddr
                              nconc (list (make-keyword (string-upcase (string k))) v))))
-      ;; Bind a fresh registry so define-component can register (component-id -> init-args)
-      ;; entries as the component tree is rendered.
-      (let ((*current-render-registry* (make-hash-table :test 'equal)))
-        (let ((html  (apply #'render-component-html component-name nil props-plist))
-              (token (generate-render-token)))
-          ;; Persist the registry so handle-action can look up init-args by token.
-          (setf (gethash token *component-args-registry*) *current-render-registry*)
-          `(200 (:content-type "application/json")
-                (,(jonathan:to-json `(:|html| ,html :|render-token| ,token)))))))))
+      (let ((html  (apply #'render-component-html component-name nil props-plist))
+            (token (generate-render-token)))
+        `(200 (:content-type "application/json")
+              (,(jonathan:to-json `(:|html| ,html :|render-token| ,token))))))))
 
 (defun serve-client-js (path)
   (let* ((filename (subseq path 1))
@@ -563,11 +592,8 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                                              (app-js-url (if has-qs
                                                              (format nil "~A/app.js?~A" api-prefix qs)
                                                              (format nil "~A/app.js" api-prefix)))
-                                             (meta-props (append (getf config :props)
-                                                                 (when (and path-param-key param-value)
-                                                                   (list path-param-key
-                                                                         (parse-param-value param-value)))
-                                                                 (parse-query-string qs)))
+                                             (meta-props (route-root-props config path-param-key
+                                                                            param-value qs))
                                              (metadata (call-metadata (getf config :component) meta-props))
                                              (route-layout (getf config :layout :inherit))
                                              (explicit-no-layout
@@ -616,7 +642,12 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
                              ;; API: Action handler
                              ((and (eq method :post) (string= effective-subpath "/action"))
                               (let* ((payload (parse-json-body env))
-                                     (result  (handle-action payload)))
+                                     (result  (handle-action
+                                               payload
+                                               (getf config :component)
+                                               (route-root-props
+                                                config path-param-key param-value
+                                                (getf env :query-string)))))
                                 (if (listp result)
                                     result
                                     `(200 (:content-type "application/json")
