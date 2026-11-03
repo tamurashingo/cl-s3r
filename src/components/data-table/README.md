@@ -89,7 +89,8 @@ When `fetch-fn` is provided it takes priority over `rows`.
 | `page-size`   | integer  | `10`         | Number of rows per page. |
 | `page`        | integer  | `1`          | Initial page number (1-based). |
 | `pager`       | boolean  | `t`          | Show pager controls. Hidden when there is only one page. |
-| `fetch-fn`    | function | `nil`        | Data-fetch function. Called at render time with `:page` and `:page-size`. Takes priority over `rows`. |
+| `refresh`     | function | `nil`        | Fetches what the table shows. Called at render time with `:page` and `:page-size`, and takes priority over `rows`. Pass it when the table should show the latest data; leave it out to render `rows` as they are. |
+| `fetch-fn`    | function | `nil`        | Deprecated name for `refresh`. |
 | `next-label`  | string   | `"Next"`     | Label for the Next button. |
 | `prev-label`  | string   | `"Previous"` | Label for the Previous button. |
 | `empty-label` | string   | `"No data"`  | Message shown when there are no rows to display. |

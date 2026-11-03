@@ -20,6 +20,16 @@
                  (:file "cookie")
                  (:file "config")
                  (:file "session")
+                 (:file "fetch")
                  (:file "server"))))
+  :in-order-to ((test-op (test-op "cl-s3r/test")))
   :description "Server Side S-expression Renderer for Stateless Component-Driven Web Frontend")
+
+(defsystem "cl-s3r/test"
+  :description "Tests for the cl-s3r core"
+  :depends-on ("cl-s3r" "rove")
+  :components ((:module "test"
+                :components ((:file "fetch"))))
+  :perform (test-op (o c)
+    (uiop:symbol-call :rove :run c)))
 

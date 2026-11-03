@@ -90,7 +90,7 @@
       `(:button (@ (class "data-table__pager-btn") (onclick (next-page))) ,label)
       `(:button (@ (class "data-table__pager-btn") (disabled "disabled")) ,label)))
 
-(define-component data-table (&key rows columns page-size page pager fetch-fn
+(define-component data-table (&key rows columns page-size page pager refresh fetch-fn
                                    next-label prev-label empty-label id
                                    &allow-other-keys)
   (let ((effective-page-size (or page-size 10))
@@ -99,10 +99,13 @@
         (effective-prev-label  (or prev-label  "Previous"))
         (effective-empty-label (or empty-label "No data")))
     (let-component-state ((current-page (or page 1)))
-      (let* ((use-fetch-fn (not (null fetch-fn)))
-             ;; call fetch-fn at render time (including after action re-renders)
+      ;; REFRESH, when given, is called at render time (including after an action
+       ;; re-render) and decides what this table shows; without it the ROWS passed
+       ;; as a prop are used as they are. FETCH-FN is the old name for REFRESH.
+      (let* ((refresh-fn   (or refresh fetch-fn))
+             (use-fetch-fn (not (null refresh-fn)))
              (fetch-result (when use-fetch-fn
-                             (funcall fetch-fn
+                             (funcall refresh-fn
                                       :page current-page
                                       :page-size effective-page-size)))
              ;; rows to display for the current page
