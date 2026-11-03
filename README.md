@@ -218,6 +218,41 @@ Children in a list are numbered by position, so re-ordering or deleting items mo
 (:li (@ (key ,(getf todo :id))) ...)
 ```
 
+### Commit Events
+
+The client sends three events, all of them commits: `click`, `submit` and `change`. There is deliberately no `oninput` — every event is a round trip to the server, so re-rendering on each keystroke is not the model. The event's own data is appended as the action's last argument:
+
+| Event | Appended argument |
+|---|---|
+| `onclick` | nothing |
+| `onsubmit` | the form's `FormData` |
+| `onchange` | the value of the control that fired |
+
+`change` is the commit for controls that are neither clicked nor submitted:
+
+```lisp
+(:select (@ (onchange (pick-fruit)))
+  (:option (@ (value "apple") (selected "selected")) "Apple")
+  (:option (@ (value "banana")) "Banana"))
+
+;; (pick-fruit "banana") — the handler receives the selected value
+```
+
+| Control | Value sent |
+|---|---|
+| `<select>` | its value, or an array of values when `multiple` |
+| `<input type="checkbox">` | `true` / `false`, received as `t` / `nil` |
+| `<input type="radio">` | its value |
+| `<input type="text">`, `<textarea>` | its text, when the field loses focus after an edit |
+
+Do not give one control both `onclick` and `onchange` — the action would be sent twice.
+
+#### Controlled and uncontrolled inputs
+
+Selects, checkboxes and radios can be **controlled**: render their state from the component's state and the morph pushes it onto the live control, so the server stays the authority even after the user has picked something.
+
+Text inputs are **uncontrolled**: controlling them would need `oninput`. Do not render `value` from state — read the text at commit time, from the submitted `FormData` or from the `change` argument.
+
 ### Form Submission
 
 Wrap the submit event in `onsubmit`. The client collects `FormData` automatically and appends it as the last argument to the action:

@@ -27,7 +27,8 @@
     ("/case8" . "8. component-id reuse across partial re-renders")
     ("/case9" . "9. stateful children in a list, with and without key")
     ("/case10" . "10. an action no component defines")
-    ("/case11" . "11. DOM preservation when a list changes")))
+    ("/case11" . "11. DOM preservation when a list changes")
+    ("/case12" . "12. change events: select, radio, checkbox, text")))
 
 (define-layout app-layout (&key children &allow-other-keys)
   `(:html (@ (lang "en"))
@@ -438,6 +439,73 @@ ul.index a { color: #2980b9; text-decoration: none; }
                      collect `(note-input (@ (label ,name))))))))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Case 12: change is the commit event for controls that are not clicked
+;;; ---------------------------------------------------------------------------
+
+(define-component case12-app (&key &allow-other-keys)
+  (let-component-state ((fruit "apple") (size "m") (agreed nil) (note ""))
+    (let-function ((pick-fruit (value)
+                     (setf fruit value))
+                   (pick-size (value)
+                     (setf size value))
+                   (set-agreed (value)
+                     (setf agreed (and value t)))
+                   (set-note (value)
+                     (setf note (or value "")))
+                   (reset-all ()
+                     (setf fruit "apple" size "m" agreed nil note "")))
+      `(:div
+         (:h2 "Case 12: change events")
+         (:p (@ (class "steps"))
+           (:b "Steps: ") "change the select, the radio group and the checkbox, and "
+           "type into the text field then click outside it. "
+           (:b "Expected: ") "every control reports its value through its own "
+           (:code "change") " action. Then click " (:b "reset") ": the controls follow "
+           "the server back to their initial values, even though the browser has "
+           "already been interacted with.")
+         (:div (@ (class "parent"))
+           (:div (@ (class "parent-head"))
+             (:span (@ (class "tag")) "root")
+             (:span (@ (class "label")) "server state")
+             (:span (@ (class "server-state count"))
+               ,(format nil "~A / ~A / ~A / ~S" fruit size (if agreed "yes" "no") note))
+             (:button (@ (class "reset-all") (onclick (reset-all))) "reset"))
+
+           (:div (@ (class "child child--stateless"))
+             (:span (@ (class "label")) "select")
+             (:select (@ (class "fruit-select") (onchange (pick-fruit)))
+               ,@(loop for (value . text) in '(("apple" . "Apple")
+                                               ("banana" . "Banana")
+                                               ("cherry" . "Cherry"))
+                       collect `(:option (@ (value ,value)
+                                            ,@(when (string= value fruit)
+                                                '((selected "selected"))))
+                                  ,text))))
+
+           (:div (@ (class "child child--stateless"))
+             (:span (@ (class "label")) "radio")
+             ,@(loop for (value . text) in '(("s" . "Small") ("m" . "Medium") ("l" . "Large"))
+                     collect `(:label (@ (class "size-option"))
+                                (:input (@ (type "radio") (name "size") (value ,value)
+                                           (class "size-radio")
+                                           ,@(when (string= value size)
+                                               '((checked "checked")))
+                                           (onchange (pick-size))))
+                                ,text)))
+
+           (:div (@ (class "child child--stateless"))
+             (:span (@ (class "label")) "checkbox")
+             (:input (@ (type "checkbox") (class "agree-box")
+                        ,@(when agreed '((checked "checked")))
+                        (onchange (set-agreed)))))
+
+           (:div (@ (class "child child--stateless"))
+             (:span (@ (class "label")) "text (commits on blur)")
+             (:input (@ (type "text") (class "note-field")
+                        (placeholder "type, then click outside")
+                        (onchange (set-note))))))))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Routes
 ;;; ---------------------------------------------------------------------------
 
@@ -453,3 +521,4 @@ ul.index a { color: #2980b9; text-decoration: none; }
 (configure-route :path "/case9" :component "case9-app"    :props '())
 (configure-route :path "/case10" :component "case10-app"  :props '())
 (configure-route :path "/case11" :component "case11-app"  :props '())
+(configure-route :path "/case12" :component "case12-app"  :props '())

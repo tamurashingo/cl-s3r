@@ -55,6 +55,7 @@ Verified in Chromium against a locally running server.
 | 9 | `/case9` | stateful children in a list, with and without `key` | `key` follows the item; without it, state follows the position |
 | 10 | `/case10` | an action no component defines | the server answers 422 and the client logs it |
 | 11 | `/case11` | DOM preservation when a list changes | a keyed element keeps its node, and the text typed into it |
+| 12 | `/case12` | `change` events: select, radio, checkbox, text | each control reports its value; select and radio follow the server, text does not |
 
 ### Case 3 — a parent re-render keeps the nested child's state
 
@@ -178,6 +179,35 @@ one, children are matched by position, and position 1 (now alpha) keeps the text
 
 The morph takes its key from `data-component-id` for component roots, or from
 `data-key` for a plain element written as `(@ (key ...))`.
+
+### Case 12 — `change` events
+
+`click` and `submit` cannot express every commit: a `<select>` is neither, and a
+text field being left after an edit is a commit of its own. `change` covers those,
+and the control's value is appended as the action's last argument -- the same shape
+as submit appending its FormData.
+
+```
+click  -> (action)             no argument
+submit -> (action form-data)   FormData
+change -> (action value)       the control's value
+```
+
+| control | value sent |
+|---|---|
+| `<select>` | its value (an array when `multiple`) |
+| `<input type="checkbox">` | `true` / `false`, arriving as `t` / `nil` |
+| `<input type="radio">` | its value |
+| `<input type="text">` etc. | its text, when the field loses focus after an edit |
+
+Clicking **reset** shows where the authority sits. The select and the radio group
+are *controlled*: their selectedness is a property, and once the user has picked
+something the `selected` / `checked` attribute no longer drives it, so the morph
+pushes the property -- the controls follow the server back to `apple / m`. The text
+field is *uncontrolled*: `value` is never overwritten, so what was typed stays.
+
+Do not put `onchange` on a control that already has `onclick` (the `checkbox`
+component uses a label click) -- the action would be sent twice.
 
 ## What to keep in mind
 

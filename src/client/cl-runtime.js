@@ -205,6 +205,25 @@ export async function sendAction(action, componentElement, rootElement,
 }
 
 /**
+ * The value a control contributes to a `change` action, appended as the action's
+ * last argument the way submit appends its FormData.
+ */
+function controlValue(el) {
+  if (!el) return null;
+  if (el.tagName === 'SELECT') {
+    return el.multiple
+      ? Array.from(el.selectedOptions).map((o) => o.value)
+      : el.value;
+  }
+  if (el.tagName === 'INPUT') {
+    if (el.type === 'checkbox') return el.checked;
+    if (el.type === 'file') return null;       // not serialisable; out of scope
+    return el.value;                           // radio sends its value, text its text
+  }
+  return el.value !== undefined ? el.value : null;
+}
+
+/**
  * Find the component element that should handle the action named ACTION-NAME.
  * Walks up the component tree for the nearest ancestor that advertises the action
  * in its `data-actions` list, i.e. the component whose `let-function` defines it.
@@ -242,6 +261,24 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpire
       if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
     } catch (e) {
       console.error('Failed to parse action JSON:', e);
+    }
+  });
+
+  // `change` is the commit event for controls that are neither clicked nor
+  // submitted: a <select>, a radio group, or a text field being left after an edit.
+  mountContainer.addEventListener('change', (event) => {
+    const trigger = event.target.closest('[data-on-change]');
+    if (!trigger) return;
+    try {
+      const action = JSON.parse(trigger.getAttribute('data-on-change'));
+      const owningComp = findActionTarget(trigger, action[0], mountContainer);
+      // The value comes from the control that fired, which may sit below the
+      // element carrying the handler.
+      action.push(controlValue(event.target));
+      const root = mountContainer.firstElementChild;
+      if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
+    } catch (e) {
+      console.error('Failed to parse change action JSON:', e);
     }
   });
 

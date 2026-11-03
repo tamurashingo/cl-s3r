@@ -15,7 +15,7 @@
 (deftest test-all-case-components-render
   (dolist (name '("nested-index" "case1-app" "case2-app" "case3-app" "case4-app"
                   "case5-app" "case6-app" "case7-app" "case8-app" "case9-app"
-                  "case10-app" "case11-app"))
+                  "case10-app" "case11-app" "case12-app"))
     (testing name
       (let ((result (test-render-component name :args '())))
         (ok (not (null (getf result :sexp))))))))
@@ -200,3 +200,36 @@
                  '(:li (@ (key "item-7") (class "row")) "text"))))
       (ok (search "data-key=\"item-7\"" html))
       (ng (search " key=" html)))))
+
+;;; ---------------------------------------------------------------------------
+;;; change actions carry the control's value (case 12)
+;;; ---------------------------------------------------------------------------
+
+(deftest test-change-handlers-are-rendered-and-dispatched
+  (testing "onchange is rendered as data-on-change"
+    (let ((html (test-render-html "case12-app")))
+      (ok (search "data-on-change='[\"PICK-FRUIT\"]'" html))
+      (ok (search "data-on-change='[\"PICK-SIZE\"]'" html))
+      (ok (search "data-on-change='[\"SET-AGREED\"]'" html))
+      (ok (search "data-on-change='[\"SET-NOTE\"]'" html))))
+
+  (testing "the server's value drives the markup"
+    (let ((html (test-render-html "case12-app" :state '(:fruit "cherry" :size "l"
+                                                        :agreed t :note "hi"))))
+      (ok (search "<option value=\"cherry\" selected=\"selected\">" html))
+      (ok (search "value=\"l\" class=\"size-radio\" checked=\"checked\"" html))))
+
+  (testing "each change action stores the value it is given"
+    (let* ((r0 (test-render-component "case12-app" :args '()))
+           (r1 (test-call-action "case12-app" "pick-fruit"
+                                 :state (getf r0 :state) :action-args '("banana")))
+           (r2 (test-call-action "case12-app" "set-agreed"
+                                 :state (getf r1 :state) :action-args '(t)))
+           (r3 (test-call-action "case12-app" "set-note"
+                                 :state (getf r2 :state) :action-args '("typed")))
+           (r4 (test-call-action "case12-app" "set-agreed"
+                                 :state (getf r3 :state) :action-args '(nil))))
+      (ok (equal "banana" (test-get-state (getf r1 :state) :fruit)))
+      (ok (test-get-state (getf r2 :state) :agreed))
+      (ok (equal "typed" (test-get-state (getf r3 :state) :note)))
+      (ok (not (test-get-state (getf r4 :state) :agreed))))))

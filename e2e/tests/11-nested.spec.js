@@ -16,7 +16,7 @@ test.describe('nested', () => {
   test('index lists every case', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('ul.index');
-    await expect(page.locator('ul.index li')).toHaveCount(11);
+    await expect(page.locator('ul.index li')).toHaveCount(12);
   });
 
   // --- 1. stateless child invokes a parent action ---
@@ -226,6 +226,72 @@ test.describe('nested', () => {
 
     await expect(keyed.locator('.label').nth(1)).toHaveText('charlie');
     await expect(keyed.locator('.note-text').nth(1)).toHaveValue('charlie-text');
+  });
+
+  // --- 12. change events ---
+
+  test('case12: select, radio, checkbox and text report through change', async ({ page }) => {
+    await page.goto('/case12');
+    await page.waitForSelector('.parent');
+    const state = page.locator('.server-state');
+    await expect(state).toHaveText('apple / m / no / ""');
+
+    await page.selectOption('.fruit-select', 'cherry');
+    await expect(state).toHaveText('cherry / m / no / ""');
+
+    await page.locator('.size-radio').nth(2).check();
+    await expect(state).toHaveText('cherry / l / no / ""');
+
+    await page.locator('.agree-box').check();
+    await expect(state).toHaveText('cherry / l / yes / ""');
+
+    await page.locator('.agree-box').uncheck();
+    await expect(state).toHaveText('cherry / l / no / ""');
+
+    // a text field commits when it loses focus
+    await page.fill('.note-field', 'hello');
+    await page.locator('.fruit-select').focus();
+    await expect(state).toHaveText('cherry / l / no / "hello"');
+  });
+
+  test('case12: a change action carries the control value', async ({ page }) => {
+    const actions = [];
+    await page.goto('/case12');
+    await page.waitForSelector('.parent');
+    page.on('request', (r) => {
+      if (r.url().includes('/action')) actions.push(JSON.parse(r.postData()).action);
+    });
+
+    await page.selectOption('.fruit-select', 'banana');
+    await expect(page.locator('.server-state')).toHaveText('banana / m / no / ""');
+    await page.locator('.agree-box').check();
+    await expect(page.locator('.server-state')).toHaveText('banana / m / yes / ""');
+
+    expect(actions[0]).toEqual(['PICK-FRUIT', 'banana']);
+    expect(actions[1]).toEqual(['SET-AGREED', true]);
+  });
+
+  test('case12: the server wins over a control the user already touched', async ({ page }) => {
+    await page.goto('/case12');
+    await page.waitForSelector('.parent');
+
+    await page.selectOption('.fruit-select', 'cherry');
+    await expect(page.locator('.server-state')).toHaveText('cherry / m / no / ""');
+    await page.locator('.size-radio').nth(2).check();
+    await expect(page.locator('.server-state')).toHaveText('cherry / l / no / ""');
+    await page.fill('.note-field', 'typed');
+
+    await page.locator('.reset-all').click();
+    await expect(page.locator('.server-state')).toHaveText('apple / m / no / ""');
+
+    // select and radio are controlled: selectedness follows the server even though
+    // the user has already picked something
+    await expect(page.locator('.fruit-select')).toHaveValue('apple');
+    await expect(page.locator('.size-radio').nth(1)).toBeChecked();
+    await expect(page.locator('.size-radio').nth(2)).not.toBeChecked();
+
+    // the text field is uncontrolled: a re-render never overwrites what was typed
+    await expect(page.locator('.note-field')).toHaveValue('typed');
   });
 
   // --- 10. an action no component defines ---
