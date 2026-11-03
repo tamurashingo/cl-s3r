@@ -26,7 +26,8 @@
     ("/case7" . "7. lifted state (recommended pattern)")
     ("/case8" . "8. component-id reuse across partial re-renders")
     ("/case9" . "9. stateful children in a list, with and without key")
-    ("/case10" . "10. an action no component defines")))
+    ("/case10" . "10. an action no component defines")
+    ("/case11" . "11. DOM preservation when a list changes")))
 
 (define-layout app-layout (&key children &allow-other-keys)
   `(:html (@ (lang "en"))
@@ -120,6 +121,15 @@ ul.index a { color: #2980b9; text-decoration: none; }
   `(:section (@ (class "mid"))
      (:h3 ,title)
      ,@(if (listp children) children (list children))))
+
+;; Stateless child holding an uncontrolled text input. Nothing about the typed
+;; text reaches the server until a commit, so it only survives a re-render if the
+;; DOM morph keeps this element.
+(define-component note-input (&key label &allow-other-keys)
+  `(:div (@ (class "child child--stateless note"))
+     (:span (@ (class "label")) ,label)
+     (:input (@ (type "text") (class "note-text") (name "note")
+                (placeholder "type something")))))
 
 ;; Stateless counter display: value and callback both come from the parent.
 (define-component display-child (&key label value on-inc &allow-other-keys)
@@ -396,6 +406,38 @@ ul.index a { color: #2980b9; text-decoration: none; }
                "call a missing action")))))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Case 11: DOM preservation when a list changes
+;;; ---------------------------------------------------------------------------
+
+(define-component case11-app (&key &allow-other-keys)
+  (let-component-state ((items '("alpha" "bravo" "charlie")) (next 1))
+    (let-function ((prepend ()
+                     (setf items (cons (format nil "new-~A" next) items))
+                     (incf next))
+                   (drop-first ()
+                     (when items
+                       (setf items (cdr items)))))
+      `(:div
+         (:h2 "Case 11: DOM preservation when a list changes")
+         (:p (@ (class "steps"))
+           (:b "Steps: ") "type into the " (:b "bravo") " box in each row, then click "
+           "\"prepend\". "
+           (:b "Question: ") "does the text stay with bravo? The upper row passes "
+           (:b "key") ", the lower row does not. Nothing you type is sent to the "
+           "server, so the text only survives if the DOM morph keeps that element.")
+         (:div (@ (class "parent"))
+           (:div (@ (class "parent-head"))
+             (:span (@ (class "tag")) "root")
+             (:button (@ (class "prepend") (onclick (prepend))) "prepend")
+             (:button (@ (class "drop-first") (onclick (drop-first))) "drop first"))
+           (mid-section (@ (title "with key"))
+             ,@(loop for name in items
+                     collect `(note-input (@ (key ,name) (label ,name)))))
+           (mid-section (@ (title "without key"))
+             ,@(loop for name in items
+                     collect `(note-input (@ (label ,name))))))))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Routes
 ;;; ---------------------------------------------------------------------------
 
@@ -410,3 +452,4 @@ ul.index a { color: #2980b9; text-decoration: none; }
 (configure-route :path "/case8" :component "case8-app"    :props '())
 (configure-route :path "/case9" :component "case9-app"    :props '())
 (configure-route :path "/case10" :component "case10-app"  :props '())
+(configure-route :path "/case11" :component "case11-app"  :props '())

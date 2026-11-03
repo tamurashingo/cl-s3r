@@ -16,7 +16,7 @@ test.describe('nested', () => {
   test('index lists every case', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('ul.index');
-    await expect(page.locator('ul.index li')).toHaveCount(10);
+    await expect(page.locator('ul.index li')).toHaveCount(11);
   });
 
   // --- 1. stateless child invokes a parent action ---
@@ -174,6 +174,58 @@ test.describe('nested', () => {
     // without a key the count stays with the position
     await expect(unkeyed.locator('.label').nth(0)).toHaveText('bravo');
     await expect(unkeyed.locator('.child-count').nth(0)).toHaveText('1');
+  });
+
+  // --- 11. DOM preservation when a list changes ---
+
+  test('case11: a keyed element keeps its DOM node when the list grows', async ({ page }) => {
+    await page.goto('/case11');
+    await page.waitForSelector('.parent');
+    const keyed = page.locator('.mid').nth(0);
+
+    // Type into bravo and mark the live node, so we can tell reuse from a rewrite.
+    await keyed.locator('.note-text').nth(1).fill('bravo-text');
+    await keyed.locator('.note').nth(1).evaluate((el) => { el.__mark = true; });
+
+    await page.locator('.prepend').click();
+    await expect(keyed.locator('.note')).toHaveCount(4);
+
+    // bravo moved down one place and took its node -- and so its text -- along.
+    await expect(keyed.locator('.label').nth(2)).toHaveText('bravo');
+    await expect(keyed.locator('.note-text').nth(2)).toHaveValue('bravo-text');
+    expect(await keyed.locator('.note').nth(2).evaluate((el) => el.__mark === true)).toBe(true);
+
+    // the element that is now first is a fresh one
+    await expect(keyed.locator('.note-text').nth(0)).toHaveValue('');
+    expect(await keyed.locator('.note').nth(0).evaluate((el) => el.__mark === true)).toBe(false);
+  });
+
+  test('case11: without a key the text stays with the position', async ({ page }) => {
+    await page.goto('/case11');
+    await page.waitForSelector('.parent');
+    const unkeyed = page.locator('.mid').nth(1);
+
+    await unkeyed.locator('.note-text').nth(1).fill('bravo-text');
+    await page.locator('.prepend').click();
+    await expect(unkeyed.locator('.note')).toHaveCount(4);
+
+    // position 1 is alpha now, and it is holding what was typed into bravo
+    await expect(unkeyed.locator('.label').nth(1)).toHaveText('alpha');
+    await expect(unkeyed.locator('.note-text').nth(1)).toHaveValue('bravo-text');
+    await expect(unkeyed.locator('.note-text').nth(2)).toHaveValue('');
+  });
+
+  test('case11: a keyed element survives a removal too', async ({ page }) => {
+    await page.goto('/case11');
+    await page.waitForSelector('.parent');
+    const keyed = page.locator('.mid').nth(0);
+
+    await keyed.locator('.note-text').nth(2).fill('charlie-text');
+    await page.locator('.drop-first').click();
+    await expect(keyed.locator('.note')).toHaveCount(2);
+
+    await expect(keyed.locator('.label').nth(1)).toHaveText('charlie');
+    await expect(keyed.locator('.note-text').nth(1)).toHaveValue('charlie-text');
   });
 
   // --- 10. an action no component defines ---

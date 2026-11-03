@@ -15,7 +15,7 @@
 (deftest test-all-case-components-render
   (dolist (name '("nested-index" "case1-app" "case2-app" "case3-app" "case4-app"
                   "case5-app" "case6-app" "case7-app" "case8-app" "case9-app"
-                  "case10-app"))
+                  "case10-app" "case11-app"))
     (testing name
       (let ((result (test-render-component name :args '())))
         (ok (not (null (getf result :sexp))))))))
@@ -184,3 +184,19 @@
                         (cl-s3r.component:action-not-found-action condition)))
       (ok (equal '("parent-bump")
                  (cl-s3r.component:action-not-found-available condition))))))
+
+;;; ---------------------------------------------------------------------------
+;;; key reaches the DOM as data-key, for the morph to match on (case 11)
+;;; ---------------------------------------------------------------------------
+
+(deftest test-key-on-a-plain-element-becomes-data-key
+  (testing "a key on a component call stays a prop and is not rendered as an attribute"
+    (let ((html (test-render-html "case11-app")))
+      (ok (search "data-component-id=\"note-input-0.0.kalpha\"" html))
+      (ng (search "key=\"alpha\"" html))))
+
+  (testing "a key on a plain element is rendered as data-key"
+    (let ((html (cl-s3r.renderer:render-html
+                 '(:li (@ (key "item-7") (class "row")) "text"))))
+      (ok (search "data-key=\"item-7\"" html))
+      (ng (search " key=" html)))))
