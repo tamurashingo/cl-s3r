@@ -1,15 +1,32 @@
 # cl-s3r
 
-**Server Side S-expression Renderer** for Stateless Component-Driven Web Frontend.
+**Server Side S-expression Renderer** — write your frontend in Common Lisp and run it on the server. No JavaScript to write, no transpiler, and no per-client state on the server.
 
-cl-s3r is a Common Lisp web framework that lets you build reactive web UIs using S-expressions. Components are defined entirely in Lisp, rendered server-side to HTML, and kept alive through a stateless request/response cycle -- the server holds no state between requests.
+cl-s3r is not a template engine. The component tree, its state and its event handlers are a program that runs on the server; the browser displays it and reports events. One event is one round trip.
+
+## What it is
+
+The idea is the one behind Phoenix LiveView and Blazor Server — a UI driven remotely — with the state put somewhere else:
+
+| | Where state lives | Transport | Per-client server state |
+|---|---|---|---|
+| Phoenix LiveView | a server process | WebSocket + diff | required (a process per connection) |
+| Blazor Server | a server circuit | SignalR | required |
+| htmx | nowhere | HTML over HTTP | none (and no component state either) |
+| **cl-s3r** | **the browser's DOM** | **HTML over HTTP** | **none** |
+| React | the browser's memory | — | none |
+
+Because the state travels with the page, cl-s3r runs as an ordinary stateless container: no WebSocket, no process per visitor, no sticky sessions, and it is free to scale to zero between requests. State also has the lifetime React gives it — a reload starts fresh, and two tabs are independent.
+
+It does not talk to a database. Like a frontend, it calls an API — [clails](https://github.com/tamurashingo/clails) or anything else — and that API stays the authority over the data and over who may change it. See [Trust](#trust).
 
 ## How It Works
 
 1. **S-expressions as HTML** -- Write UI with keyword symbols (`:div`, `:p`, `:button`) and Lisp's backquote/comma syntax for dynamic values.
-2. **Completely stateless server** -- Component state is serialized into `data-state` attributes on the client. The server retains nothing between requests.
-3. **Unidirectional data flow** -- On user interaction, the client POSTs the entire state tree to the server. The server executes the action, re-renders the component, and returns the new HTML.
-4. **Decoupled components** -- Child components never reference parent functions directly. Callbacks are passed as S-expression data through props.
+2. **No per-client server state** -- Component state is serialized into `data-state` attributes in the browser. Nothing about a page has to be remembered between requests for it to work: an action rebuilds the page's props by re-rendering the path down to the component that handled it, and restores every component's state from what the browser reported. Any instance can answer any request. Caching is allowed, as long as losing it only costs time.
+3. **Commit events only** -- The browser reports `click`, `submit` and `change`. Every event is a round trip, so there is deliberately no `oninput`.
+4. **Unidirectional data flow** -- The client POSTs the state of every component that has any, keyed by component id. The server executes the action, re-renders that component's subtree, and returns HTML, which is morphed into the live DOM.
+5. **Decoupled components** -- Child components never reference parent functions directly. Callbacks are passed as S-expression data through props, and each action is routed to the component that defines it.
 
 ## Quick Start
 
@@ -402,6 +419,65 @@ inside the fetcher layer, keyed by what it is fetching — fetcher name, argumen
 version — and it must be safe to lose. A cache keyed by something per-client, that
 the next request needs to be there, is the one thing that would break the promise in
 [How It Works](#how-it-works).
+
+## Conventions
+
+These are the rules the framework's design leans on. Following them is what keeps a
+page working when an ancestor re-renders, when a second instance answers the next
+request, or when a list changes shape.
+
+### State and props
+
+| | What it may hold | Why |
+|---|---|---|
+| `let-component-state` | values that survive a JSON round trip | it is serialized into `data-state` and travels to the browser and back |
+| props | any Lisp value, functions included | the parent builds them again on every render; they never leave the process |
+
+State is for what the browser has to carry: a page number, a filter, a selection, an
+open/closed flag. Not fetched data — that is read again on the next render.
+
+### A render must be pure apart from its fetches
+
+An action re-renders, and the ancestors between the root and the action's target are
+evaluated again to rebuild its props. A component body that wrote something would
+write it more than once. Put writes in `let-function`, where they run exactly once
+per action.
+
+### What the browser may be relied on to do
+
+Every event is a round trip, so the only client-side behaviour available is what the
+browser does by itself in response to the DOM being updated:
+
+| Fine to use | Do not rely on |
+|---|---|
+| CSS transitions and animations on elements the morph keeps | JavaScript-driven animation or dragging |
+| `:hover`, `:focus`, `:active` and other pure-CSS state | `oninput`-driven updates (not sent, by design) |
+| Native control behaviour between commits (typing, toggling) | anything that dies when an element is replaced, unless it is keyed |
+
+See [DOM Morphing](#dom-morphing) for exactly what a kept element keeps.
+
+### An action is a round trip
+
+Clicking the same button again before the response lands sends the same state twice,
+so the second click is lost. This is visible in tests: the Playwright suites assert
+the result of one click before making the next.
+
+## Trust
+
+cl-s3r holds the same position as a React app: **the state it renders from is
+untrusted, and the API behind it is the authority.**
+
+`data-state` lives in the browser and can be edited there. The render token is signed
+with `S3R_SECRET_KEY`, but it only proves the page came from this deploy recently —
+it says nothing about the state that was sent back. So:
+
+* Do not put a value in state that must not be forged — a price, a role, another
+  user's id. Keep in state only what the screen is showing.
+* Have the API check authentication, authorisation and ownership on every call, the
+  way it would for a browser client.
+* Keep the credentials for calling the API out of state. The HMAC-signed cookie
+  session (see [Session Management](#session-management)) is signed server-side and
+  never appears in `data-state`; `sample/04-login` works this way.
 
 ## Layout System
 
@@ -896,7 +972,7 @@ nested components restore — use `test-render-html`, which renders to HTML the
 way the server does:
 
 ```lisp
-;; :client-state stands in for the state tree the browser would have reported
+;; :client-state stands in for the state the browser would have reported
 (cl-s3r.testing:test-render-html "case3-app"
                                  :state        '(:parent-count 7)
                                  :client-state '(("counter-child-0.0" . (:count 2))))
@@ -965,6 +1041,8 @@ All API endpoints are relative to the route's `apiPrefix`. For a root route the 
 | `define-metadata` | Register a metadata function for a route component (e.g. page title) |
 | `define-error-page` | Register a component as the error page for an HTTP status code |
 | `signal-http-error` | Raise an HTTP error from within a component |
+| `define-fetcher` | Define a data-fetch function, called once per request per argument list |
+| `invalidate-fetch` | Forget memoised fetch results, after writing through to the API |
 
 ### Server API
 
@@ -1054,6 +1132,67 @@ make image && make up
 
 Open `http://localhost:5006`.
 
+### Accordion (`sample/07-accordion`)
+
+Single and multiple mode `accordion` components, driven by their own state.
+
+```sh
+cd sample/07-accordion
+make image && make up
+```
+
+Open `http://localhost:5007`.
+
+### Data Table (`sample/08-data-table`)
+
+The `data-table` component in raw, column and paged modes, a `refresh` function
+that fetches the page being shown, and a write that has to invalidate it.
+
+```sh
+cd sample/08-data-table
+make image && make up
+```
+
+Open `http://localhost:5008`.
+
+### Dialog (`sample/09-dialog`)
+
+The `dialog` component, opened and closed from the root's state, with CSS fade and
+scale transitions.
+
+```sh
+cd sample/09-dialog
+make image && make up
+```
+
+Open `http://localhost:5009`.
+
+### Checkbox (`sample/10-checkbox`)
+
+The `checkbox` component uncontrolled, disabled, controlled by the parent, and
+submitted as part of a real form.
+
+```sh
+cd sample/10-checkbox
+make image && make up
+```
+
+Open `http://localhost:5010`.
+
+### Nested Component Behaviour (`sample/11-nested`)
+
+A diagnostic sample: one route per nesting pattern. State across a parent
+re-render, action routing into and out of stateful children, component-id
+stability, `key` in lists, DOM preservation, and the commit events. Each case
+prints the steps to follow.
+
+```sh
+cd sample/11-nested
+make image && make up
+```
+
+Open `http://localhost:5011`. See `sample/11-nested/README.md` for the write-up.
+
 To stop any sample:
 
 ```sh
@@ -1103,9 +1242,22 @@ cd sample/02-todo    && make test
 cd sample/03-books   && make test
 cd sample/04-login   && make test
 cd sample/06-error-handling && make test
+cd sample/08-data-table && make test
+cd sample/09-dialog  && make test
+cd sample/10-checkbox && make test
+cd sample/11-nested  && make test
 ```
 
 `make image` must have been run at least once before running tests.
+
+### Running Core Tests (Rove unit tests)
+
+The framework's own tests live in `test/` and run against the component test image:
+
+```sh
+make component.image   # build the image (once)
+make core.test
+```
 
 ### Running Component Tests (Rove unit tests)
 
@@ -1188,6 +1340,7 @@ cl-s3r/
     cookie.lisp      -- Per-request cookie access (cl-s3r.cookie)
     session.lisp     -- HMAC-signed session management (cl-s3r.session)
     config.lisp      -- .env loading and typed env helpers (cl-s3r.config)
+    fetch.lisp       -- define-fetcher, per-request memoisation (cl-s3r.fetch)
     server.lisp      -- HTTP server, prefix routing, layouts, error pages, static files
     client/          -- ES6 modules served to the browser
     components/
@@ -1200,9 +1353,15 @@ cl-s3r/
     04-login/        -- Session-based authentication (port 5004)
     05-carousel/     -- CSS transition animations via DOM morphing (port 5005)
     06-error-handling/ -- define-error-page and signal-http-error (port 5006)
+    07-accordion/    -- accordion component, single and multiple mode (port 5007)
+    08-data-table/   -- data-table component, refresh and invalidation (port 5008)
+    09-dialog/       -- dialog component with CSS transitions (port 5009)
+    10-checkbox/     -- checkbox component, controlled and uncontrolled (port 5010)
+    11-nested/       -- nested component behaviour, one route per case (port 5011)
   spec/
     src/             -- Component spec definitions for the spec-sheet browser
     Makefile         -- make spec-sheet: start on port 5100
+  test/              -- Unit tests for the core (cl-s3r/test, `make core.test`)
   e2e/               -- Playwright browser tests for all sample apps
 ```
 
@@ -1298,6 +1457,29 @@ cl-s3r/
 - [x] `configure-static-dir` — serve assets via `lack/middleware/static`
 - [x] `asset-path` — root-relative or CDN-prefixed URL helper
 - [x] `S3R_ASSET_BASE_URL` / `S3R_ASSET_SERVING_DISABLED` environment variables
+
+### Phase 16: Nested Components
+- [x] path-based `component-id`, stable across a full render and a partial one
+- [x] nested components restore their own state instead of resetting
+- [x] `key` for list children, as component identity and as the DOM morph's key
+- [x] actions routed to the component that defines them, 422 when none does
+
+### Phase 17: No Per-Client Server State
+- [x] the init-args registry removed; props rebuilt by re-rendering the path to the target
+- [x] root props rebuilt from the route definition and the URL
+- [x] component state sent as a flat map, with stateless components left out
+
+### Phase 18: Commit Events and Morphing
+- [x] `change` alongside `click` and `submit`, each appending its own event data
+- [x] controlled selects, checkboxes and radios; text inputs stay uncontrolled
+- [x] keyed morph children, with the preservation contract documented
+
+### Phase 19: Data Fetching
+- [x] `define-fetcher` — called once per request per argument list
+- [x] timeouts and a failure policy, answered with 502 and the error page
+- [x] `invalidate-fetch` for a write to call
+- [x] `refresh` on reusable components, so a component decides for itself
+- [ ] cross-request cache (Redis), once something measures as needing it
 
 ## License
 
