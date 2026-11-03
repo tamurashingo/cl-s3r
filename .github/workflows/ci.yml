@@ -86,10 +86,29 @@ jobs:
       - name: Run component tests
         run: make component.${{ matrix.component }}.test
 
+  core-tests:
+    name: Core unit tests
+    runs-on: ubuntu-latest
+    needs: component-test-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-component-test
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load -i /tmp/cl-s3r-component-test.tar
+
+      - name: Run core tests
+        run: make core.test
+
   unit-tests:
     name: Unit tests (${{ matrix.sample }})
     runs-on: ubuntu-latest
-    needs: [build, component-tests]
+    needs: [build, core-tests, component-tests]
     strategy:
       fail-fast: false
       matrix:

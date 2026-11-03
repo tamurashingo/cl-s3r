@@ -315,6 +315,94 @@ are not replaced, their contents are rewritten, so focus and typed-in text stay 
 they were and now belong to the wrong item. With a key, the element travels with its
 item. `sample/11-nested` (`/case11`) shows both side by side.
 
+## Data Fetching
+
+cl-s3r does not talk to a database. Like a frontend, it calls an API — `clails`, or
+anything else — and renders what comes back. The fetch happens **inside the render**:
+a component's body calls a fetcher the way it would call any function.
+
+```lisp
+(define-fetcher fetch-users (&key (page 1) (page-size 10))
+  (http-get "/api/users" :page page :page-size page-size))
+
+(define-component user-list (&key &allow-other-keys)
+  (let-component-state ((page 1))                 ; state holds the query, not the data
+    (let-function ((next-page () (incf page)))
+      (let ((result (fetch-users :page page)))
+        `(:div ...)))))
+```
+
+Two rules follow from that, and they are worth stating:
+
+* **State holds the query, not the answer.** Page number, filter, selection — those
+  go in `let-component-state` and travel to the browser and back. Fetched rows do
+  not: they are read again on the next render, which is what keeps the payload small.
+* **A render must be pure apart from its fetches.** An action re-renders, and the
+  ancestors between the root and the target are evaluated again to rebuild props, so
+  a body that writes somewhere would write twice.
+
+### `define-fetcher`
+
+A fetcher is called **at most once per request per argument list**. Several components
+asking for the same thing in one render reach the API once and all see the same
+snapshot; the ancestors re-evaluated to rebuild props do not fetch again either.
+
+```lisp
+(define-fetcher (fetch-users :timeout 3 :on-error :nil) (&key page)
+  ...)
+```
+
+| Option | Meaning |
+|---|---|
+| `:timeout` | Seconds before the call is treated as failed. Defaults to `cl-s3r.fetch:*default-fetch-timeout*` (10); `nil` waits forever. |
+| `:on-error` | `:signal` (default) raises `fetch-failed`, which the server answers with 502 and the registered error page; `:nil` returns `nil` and lets the component render something else. |
+
+Results are memoised on the arguments compared with `equal`, so pass plain data.
+
+### Writing, and `invalidate-fetch`
+
+A write has to say what it invalidated, or the re-render that follows it may be
+served the memoised answer from before the write:
+
+```lisp
+(let-function ((add-user (form-data)
+                 (post-user form-data)
+                 (invalidate-fetch 'fetch-users))))
+```
+
+`(invalidate-fetch 'name)` forgets every result of that fetcher,
+`(invalidate-fetch 'name :page 1)` exactly that call, and `(invalidate-fetch)` the
+whole request. `sample/08-data-table` has the trap on screen: its root body reads
+the first user's name before the action runs, so removing the `invalidate-fetch`
+call leaves that name one write behind.
+
+### Reusable components
+
+A component that is meant to be reused takes its data as a prop and, optionally, a
+`refresh` function — and decides for itself which to use:
+
+```lisp
+(define-component data-table (&key rows refresh page-size &allow-other-keys)
+  (let-component-state ((page 1))
+    (let ((data (if refresh
+                    (funcall refresh :page page :page-size page-size)  ; always current
+                    rows)))                                            ; the prop as given
+      ...)))
+```
+
+Such a component must work with `rows` alone, so it can be used where the data is
+already at hand — and so it can be driven from the spec-sheet, which has no way to
+pass a function.
+
+### Caching across requests
+
+There is none yet, and it is not needed for correctness: a fetcher that is not
+memoised is merely called again. If one is added later (Redis, say), it belongs
+inside the fetcher layer, keyed by what it is fetching — fetcher name, arguments,
+version — and it must be safe to lose. A cache keyed by something per-client, that
+the next request needs to be there, is the one thing that would break the promise in
+[How It Works](#how-it-works).
+
 ## Layout System
 
 Layouts define the HTML document shell (the `<html>`, `<head>`, and `<body>` structure). Unlike components, layouts have no state and no `data-state` attribute.

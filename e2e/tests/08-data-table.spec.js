@@ -117,4 +117,26 @@ test.describe('data-table', () => {
     await expect(table.locator('.data-table__empty')).toBeVisible();
     await expect(table.locator('.data-table__empty')).toContainText('No data');
   });
+  // --- 4b. a write, and the invalidation that has to follow it ---
+
+  test('rename: a write is visible to the read that follows it', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#rename-btn');
+    await expect(page.locator('#first-user')).toHaveText('Alice');
+    await expect(page.locator('#demo-fetch .data-table__td').nth(1)).toHaveText('Alice');
+
+    await page.locator('#rename-btn').click();
+    await expect(page.locator('#rename-count')).toHaveText('1');
+
+    // The root's body reads fetch-users before the action runs, so without the
+    // (invalidate-fetch 'fetch-users) in the action this would still say Alice.
+    await expect(page.locator('#first-user')).toHaveText('Renamed 1');
+    await expect(page.locator('#demo-fetch .data-table__td').nth(1)).toHaveText('Renamed 1');
+
+    await page.locator('#rename-btn').click();
+    await expect(page.locator('#rename-count')).toHaveText('2');
+    await expect(page.locator('#first-user')).toHaveText('Renamed 2');
+  });
+
+
 });

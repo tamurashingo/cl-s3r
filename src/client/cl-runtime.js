@@ -105,6 +105,14 @@ export async function sendAction(action, componentElement, rootElement,
       return;
     }
 
+    if (response.status === 502) {
+      const detail = await response.json().catch(() => ({}));
+      console.error(
+        `cl-s3r: could not fetch data for this action` +
+        (detail.fetcher ? ` (fetcher ${detail.fetcher}: ${detail.detail})` : ''));
+      return;
+    }
+
     if (!response.ok) throw new Error('Network response was not ok');
 
     const result = await response.json();

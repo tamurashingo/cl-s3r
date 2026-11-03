@@ -31,6 +31,11 @@
                 #:getenv
                 #:getenv-integer
                 #:getenv-boolean)
+  (:import-from #:cl-s3r.fetch
+                #:with-fetch-scope
+                #:fetch-failed
+                #:fetch-failed-fetcher
+                #:fetch-failed-cause)
   (:import-from #:lack/middleware/static
                 #:*lack-middleware-static*)
   (:export #:start-server
@@ -429,6 +434,15 @@ Falls back to *root-component* (deprecated) when LAYOUT-NAME is nil and NO-LAYOU
             (jonathan:parse json-str)))
         nil)))
 
+(defun fetch-failed-json (e)
+  "Answer an action whose render could not get its data."
+  (format *error-output* "~A~%" e)
+  `(502 (:content-type "application/json")
+        (,(jonathan:to-json
+           `(:|error| "fetch failed"
+             :|fetcher| ,(princ-to-string (fetch-failed-fetcher e))
+             :|detail| ,(princ-to-string (fetch-failed-cause e)))))))
+
 (defun handle-action (payload root-component root-props)
   "Execute an action and return the re-rendered subtree.
 
@@ -471,6 +485,8 @@ from what the browser reported."
                         (error "component at ~{~A~^.~} is ~A, not ~A"
                                target-path tag component-name))
                       props))
+                (fetch-failed (e)
+                  (return-from handle-action (fetch-failed-json e)))
                 (error (e)
                   (format *error-output* "Stale action for ~A: ~A~%" target-component-id e)
                   (return-from handle-action
@@ -483,6 +499,8 @@ from what the browser reported."
                                                :component-init-args target-args
                                                :component-path target-path
                                                :client-state-tree client-states)
+                        (fetch-failed (e)
+                          (return-from handle-action (fetch-failed-json e)))
                         (action-not-found (e)
                           ;; The action reached a component that does not define it.
                           ;; Answer with an error so the browser can report it instead
@@ -526,8 +544,11 @@ from what the browser reported."
 (defun app (env)
   (let ((*current-cookies* (parse-cookies (gethash "cookie" (getf env :headers))))
         (*pending-cookie-changes* nil))
+    ;; One memo table per request: a fetcher reached from several components during
+    ;; one render goes out once, and every component sees the same snapshot.
     (let ((response
-           (block app
+           (with-fetch-scope
+            (block app
              (let ((path (getf env :path-info))
                    (method (getf env :request-method)))
 
@@ -597,6 +618,10 @@ from what the browser reported."
                                                                   :metadata metadata
                                                                   :layout-name effective-layout-name
                                                                   :no-layout explicit-no-layout))))
+                                      (fetch-failed (e)
+                                        (format *error-output* "~A~%" e)
+                                        (render-error-response
+                                         502 (list :message (princ-to-string e))))
                                       (http-error (e)
                                         (render-error-response
                                          (http-error-status-code e)
@@ -619,6 +644,10 @@ from what the browser reported."
                              ((and (eq method :post) (string= effective-subpath "/api/render"))
                               (handler-case
                                 (handle-render env)
+                                (fetch-failed (e)
+                                  (format *error-output* "~A~%" e)
+                                  (render-error-response
+                                   502 (list :message (princ-to-string e))))
                                 (http-error (e)
                                   (render-error-response
                                    (http-error-status-code e)
@@ -641,7 +670,7 @@ from what the browser reported."
                                     `(200 (:content-type "application/json")
                                           (,result)))))
 
-                             (t '(404 (:content-type "text/plain") ("Not Found")))))))))))))
+                             (t '(404 (:content-type "text/plain") ("Not Found"))))))))))))))
       (inject-set-cookie-headers response))))
 
 (defun %make-static-middleware (app dir)

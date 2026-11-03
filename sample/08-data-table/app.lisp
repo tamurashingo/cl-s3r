@@ -3,11 +3,14 @@
   (:import-from #:cl-s3r.server
                 #:configure-route
                 #:configure-default-layout)
+  (:import-from #:cl-s3r.fetch
+                #:define-fetcher
+                #:invalidate-fetch)
   (:import-from #:cl-s3r.component
                 #:define-component
                 #:define-layout
-                #:let-component-state
-                #:let-function)
+                #:let-function
+                #:let-component-state)
   (:import-from #:cl-s3r.components.data-table
                 #:data-table))
 
@@ -37,28 +40,52 @@
                       :age (+ 20 (mod i 30))
                       :email (format nil "user~A@example.com" i))))
 
-;; fetch-fn stub: pages through all-rows in memory
-(defun make-fetch-fn (all-rows)
-  (lambda (&key (page 1) (page-size 10))
-    (let* ((total (length all-rows))
-           (total-pages (max 1 (ceiling total page-size)))
-           (start (min (* (1- page) page-size) total))
-           (end (min (+ start page-size) total))
-           (paged (subseq all-rows start end)))
-      (list :rows     paged
-            :total    total
-            :page     page
-            :has-prev (> page 1)
-            :has-next (< page total-pages)))))
+;; Stands in for the API this app would call. Counting the calls lets the demo
+;; show that one render reaches the fetcher once per page, however many
+;; components ask for it.
+(defvar *fetch-calls* 0)
+
+(define-fetcher fetch-users (&key (page 1) (page-size 10))
+  (incf *fetch-calls*)
+  (let* ((all-rows *sample-users*)
+         (total (length all-rows))
+         (total-pages (max 1 (ceiling total page-size)))
+         (start (min (* (1- page) page-size) total))
+         (end (min (+ start page-size) total))
+         ;; Copy what is handed out, the way a real API client would: the caller
+         ;; must not end up holding the store's own conses, or a write would be
+         ;; visible through results that were fetched before it.
+         (paged (mapcar #'copy-list (subseq all-rows start end))))
+    (list :rows     paged
+          :total    total
+          :page     page
+          :has-prev (> page 1)
+          :has-next (< page total-pages))))
+
+;; A write: renames the first user in the store. The read is memoised for the
+;; rest of the request, so the write has to say what it invalidated or the
+;; re-render that follows would show the old name.
+(defun rename-first-user (name)
+  (setf (getf (first *sample-users*) :name) name))
 
 ;; root component
 (define-component data-table-demo (&key &allow-other-keys)
-  (let ((columns '(:name "Name" :status "Status" :age "Age" :email "Email"))
-        (simple-rows '((:fruit "Apple"  :color "Red")
-                       (:fruit "Banana" :color "Yellow")
-                       (:fruit "Grape"  :color "Purple")))
-        (fetch-fn (make-fetch-fn *sample-users*)))
-    `(:div
+  (let-component-state ((renames 0))
+    (let-function ((rename ()
+                     (incf renames)
+                     (rename-first-user (format nil "Renamed ~A" renames))
+                     ;; Without this, the table below would still show the old
+                     ;; name: the fetch for this page is already memoised.
+                     (invalidate-fetch 'fetch-users)))
+     (let* ((columns '(:name "Name" :status "Status" :age "Age" :email "Email"))
+            (simple-rows '((:fruit "Apple"  :color "Red")
+                           (:fruit "Banana" :color "Yellow")
+                           (:fruit "Grape"  :color "Purple")))
+            ;; Read in the root's body, which runs before the action does. That is
+            ;; what makes the invalidation below load-bearing: without it, the
+            ;; re-render after the write would be served this memoised page.
+            (first-user (getf (first (getf (fetch-users :page 1) :rows)) :name)))
+      `(:div
        (:h1 "data-table Demo")
 
        ;; --- 1. no columns (raw mode)
@@ -88,15 +115,30 @@
                         (page-size 5)
                         (pager t))))
 
-       ;; --- 4. fetch-fn + pager
+       ;; --- 4. refresh + pager
        (:section
-         (:h2 "4. fetch-fn + pagination")
-         (:p "30 records paged at page-size=10 via fetch-fn.")
+         (:h2 "4. refresh + pagination")
+         (:p "30 records paged at page-size=10. The table is given a "
+             (:code "refresh") " function, so it fetches the page it is showing "
+             "on every render instead of being handed rows.")
          (data-table (@ (id "demo-fetch")
-                        (fetch-fn ,fetch-fn)
+                        (refresh ,#'fetch-users)
                         (columns (:id "ID" :name "Name" :status "Status" :age "Age" :email "Email"))
                         (page-size 10)
                         (pager t))))
+
+       ;; --- 4b. a write, and what it has to invalidate
+       (:section
+         (:h2 "4b. Writing, then reading again")
+         (:p "Renaming the first user writes to the store and calls "
+             (:code "(invalidate-fetch 'fetch-users)") ". Without that call the "
+             "table above would still show the old name, because the read for "
+             "this page is memoised for the rest of the request.")
+         (:p "first user, as read in the root's body: "
+             (:strong (@ (id "first-user")) ,first-user))
+         (:p "renames: " (:span (@ (id "rename-count")) ,renames)
+             "  fetcher calls so far: " (:span (@ (id "fetch-calls")) ,*fetch-calls*))
+         (:button (@ (id "rename-btn") (onclick (rename))) "rename first user"))
 
        ;; --- 5. empty data
        (:section
@@ -105,7 +147,7 @@
          (data-table (@ (id "demo-empty")
                         (rows nil)
                         (columns (:name "Name" :age "Age"))
-                        (pager t)))))))
+                        (pager t)))))))))
 
 (configure-route :path "/"
                  :component "data-table-demo"
