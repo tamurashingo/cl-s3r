@@ -166,10 +166,9 @@ callback was so hard to spot.
 * An action is a round trip. Clicking the same button again before the response
   lands sends the same state twice, so the second click is lost — the e2e spec
   asserts between clicks for that reason.
-* A component whose root element carries an explicit `id` attribute is addressed
-  by that id instead of by its path. Its own state is then not restored on a
-  parent re-render, because the state lookup happens before the element is
-  rendered and can only use the path.
+* An `id` attribute in a component's own markup is a plain HTML id and has no
+  effect on `data-component-id`, which always comes from the component's position
+  in the tree. Use `key` to pin identity.
 
 ## Testing nested behaviour
 

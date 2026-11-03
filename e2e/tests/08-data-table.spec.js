@@ -9,19 +9,19 @@ test.describe('data-table', () => {
   // --- demo-rows-pager (rows + pager, page-size=5, 30 rows) ---
 
   test('rows+pager: shows page-size rows on initial render', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-rows-pager"]');
+    const table = page.locator('#demo-rows-pager');
     const rows = table.locator('tbody tr');
     await expect(rows).toHaveCount(5);
   });
 
   test('rows+pager: Previous button is disabled on the first page', async ({ page }) => {
-    const pager = page.locator('[data-component-id="demo-rows-pager"] .data-table__pager');
+    const pager = page.locator('#demo-rows-pager .data-table__pager');
     const prevBtn = pager.locator('button:has-text("Previous")');
     await expect(prevBtn).toBeDisabled();
   });
 
   test('rows+pager: Next button navigates to the next page', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-rows-pager"]');
+    const table = page.locator('#demo-rows-pager');
     const pager = table.locator('.data-table__pager');
     const nextBtn = pager.locator('button:has-text("Next")');
     const info = pager.locator('.data-table__pager-info');
@@ -32,7 +32,7 @@ test.describe('data-table', () => {
   });
 
   test('rows+pager: Previous button navigates back to the previous page', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-rows-pager"]');
+    const table = page.locator('#demo-rows-pager');
     const pager = table.locator('.data-table__pager');
     const nextBtn = pager.locator('button:has-text("Next")');
     const prevBtn = pager.locator('button:has-text("Previous")');
@@ -45,7 +45,7 @@ test.describe('data-table', () => {
   });
 
   test('rows+pager: Next button is disabled on the last page', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-rows-pager"]');
+    const table = page.locator('#demo-rows-pager');
     const pager = table.locator('.data-table__pager');
     const nextBtn = pager.locator('button:has-text("Next")');
     const info = pager.locator('.data-table__pager-info');
@@ -68,12 +68,12 @@ test.describe('data-table', () => {
   // --- demo-fetch (fetch-fn + pager, page-size=10, 30 rows) ---
 
   test('fetch-fn+pager: shows 10 rows on initial render', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-fetch"]');
+    const table = page.locator('#demo-fetch');
     await expect(table.locator('tbody tr')).toHaveCount(10);
   });
 
   test('fetch-fn+pager: Next button navigates to the next page', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-fetch"]');
+    const table = page.locator('#demo-fetch');
     const pager = table.locator('.data-table__pager');
     const nextBtn = pager.locator('button:has-text("Next")');
     const info = pager.locator('.data-table__pager-info');
@@ -83,7 +83,7 @@ test.describe('data-table', () => {
   });
 
   test('fetch-fn+pager: Next button is disabled on the last page', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-fetch"]');
+    const table = page.locator('#demo-fetch');
     const pager = table.locator('.data-table__pager');
     const nextBtn = pager.locator('button:has-text("Next")');
     const info = pager.locator('.data-table__pager-info');
@@ -98,7 +98,7 @@ test.describe('data-table', () => {
   // --- demo-columns (with columns) ---
 
   test('columns: header row is visible', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-columns"]');
+    const table = page.locator('#demo-columns');
     await expect(table.locator('thead')).toBeVisible();
     await expect(table.locator('thead th').first()).toContainText('Fruit');
   });
@@ -106,14 +106,14 @@ test.describe('data-table', () => {
   // --- demo-raw (no columns) ---
 
   test('raw: no header row without columns', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-raw"]');
+    const table = page.locator('#demo-raw');
     await expect(table.locator('thead')).toHaveCount(0);
   });
 
   // --- demo-empty (empty data) ---
 
   test('empty: shows empty message when there are no rows', async ({ page }) => {
-    const table = page.locator('[data-component-id="demo-empty"]');
+    const table = page.locator('#demo-empty');
     await expect(table.locator('.data-table__empty')).toBeVisible();
     await expect(table.locator('.data-table__empty')).toContainText('No data');
   });

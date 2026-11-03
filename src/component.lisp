@@ -18,7 +18,7 @@
            #:*forced-component-id*
            #:*component-path*
            #:*client-state-tree*
-           #:*component-args-registry*
+           #:resolve-target-args
            #:call-component-action
            #:render-component
            #:render-component-html
@@ -117,17 +117,6 @@ Returns a plist like (:title \"...\") or nil if no metadata is registered."
 ;; we must not fall back to init-val when the key is explicitly nil.
 (defvar *state-unset-sentinel* (list 'unset))
 
-;; Init-args registry: populated during an initial render pass.
-;; *current-component-init-args* holds the keyword args passed to the
-;; currently-executing component function.
-;; *current-render-registry*    is a hash (component-id -> (:args ... :path ...))
-;;   that accumulates entries for the whole render tree; bound to a fresh hash by
-;;   handle-render, nil at all other times.
-;; *component-args-registry*    is the global store (render-token -> registry hash).
-(defvar *current-component-init-args* nil)
-(defvar *current-render-registry* nil)
-(defvar *component-args-registry* (make-hash-table :test 'equal))
-
 (defun format-component-id (component-name path)
   "Build the component-id for COMPONENT-NAME at PATH, e.g. \"counter-child-0.1\"."
   (format nil "~A-~{~A~^.~}" component-name path))
@@ -206,6 +195,12 @@ follows the child around when siblings are re-ordered, inserted or removed."
                                       (symbolp (caar rest))
                                       (string= (string (caar rest)) "@")))
                       (path (or *component-path* (list "0")))
+                      ;; The id is derived from the position in the tree and nothing
+                      ;; else, so that id and path stay a 1:1 mapping: the server
+                      ;; reconstructs a component's props by walking that path, and
+                      ;; restores its state by looking the id up. An `id` attribute in
+                      ;; the component's own markup is rendered as a plain HTML id and
+                      ;; does not take part in this. Use `key` to pin identity.
                       (component-id
                        (or (when *forced-component-id*
                              (prog1 *forced-component-id*
@@ -213,17 +208,7 @@ follows the child around when siblings are re-ordered, inserted or removed."
                                ;; the single target component of this render pass, not to
                                ;; every nested child component encountered afterward.
                                (setf *forced-component-id* nil)))
-                           (when has-attrs
-                             (second (assoc "id" (cdar rest)
-                                            :test (lambda (a b)
-                                                    (string= a (string-downcase (string b)))))))
                            (format-component-id ,component-name path))))
-                 ;; Register this instance's init-args and tree position so that
-                 ;; call-component-action can re-invoke it with the same args and
-                 ;; re-render its subtree under the same paths.
-                 (when *current-render-registry*
-                   (setf (gethash component-id *current-render-registry*)
-                         (list :args *current-component-init-args* :path path)))
                  (let ((actions-attr
                         (when ,own
                           `((data-actions ,(format nil "~{~A~^ ~}" ,own))))))
@@ -264,17 +249,12 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
     (if func-name
         (let ((*current-component-state* current-state)
               (*current-component-functions* nil)
-              (*sync-component-state* nil)
-              ;; render-component binds this for nested children (via expand-child-component),
-              ;; but the top-level action target is invoked directly via run-comp below, bypassing
-              ;; render-component -- without this, *current-render-registry* would capture nil
-              ;; instead of component-init-args when re-registering this component's own id,
-              ;; corrupting the registry for the component's *next* action dispatch.
-              (*current-component-init-args* component-init-args))
+              (*sync-component-state* nil))
 
           ;; Dry-run to populate *current-component-functions* via let-function.
-          ;; Pass the stored init-args so that non-state props (items, mode, etc.)
-          ;; are available and closures capture the correct values.
+          ;; COMPONENT-INIT-ARGS are the props recomputed by resolve-target-args, so
+          ;; non-state props (items, mode, callbacks) are available and the closures
+          ;; registered by let-function capture the right values.
           (labels ((run-comp ()
                      (apply (symbol-function func-name)
                             (or component-init-args nil))))
@@ -299,29 +279,26 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
                 (funcall *sync-component-state*)))
 
             ;; Re-render with updated state, preserving component ID.
-            ;; COMPONENT-PATH is this instance's position in the page, replayed from
-            ;; the registry, so every nested child below it is numbered exactly as it
-            ;; was during the full-page render and keeps the component-id the browser
-            ;; already holds. CLIENT-STATE-TREE lets those children pick their own
-            ;; state back up instead of restarting from their props.
-            (let* ((fresh-registry (make-hash-table :test 'equal))
-                   (final-html
-                    (let ((*component-path* (or component-path (list "0")))
-                          (*child-index* (list 0))
-                          (*client-state-tree* client-state-tree)
-                          (*forced-component-id* forced-component-id)
-                          (*current-render-registry* fresh-registry)
-                          (*component-expander* #'expand-child-component))
-                      (render-html (run-comp)))))
-              (list :html final-html :state *current-component-state* :registry fresh-registry))))
+            ;; COMPONENT-PATH is this instance's position in the page, so every nested
+            ;; child below it is numbered exactly as it was during the full-page render
+            ;; and keeps the component-id the browser already holds. CLIENT-STATE-TREE
+            ;; lets those children pick their own state back up instead of restarting
+            ;; from their props.
+            (let ((final-html
+                   (let ((*component-path* (or component-path (list "0")))
+                         (*child-index* (list 0))
+                         (*client-state-tree* client-state-tree)
+                         (*forced-component-id* forced-component-id)
+                         (*component-expander* #'expand-child-component))
+                     (render-html (run-comp)))))
+              (list :html final-html :state *current-component-state*))))
         (error "Component ~A not found" component-name))))
 
 (defun render-component (name state &rest args)
   (let* ((comp-info (gethash (string-downcase (string name)) *component-registry*))
          (func-name (getf comp-info :name)))
     (if func-name
-        (let ((*current-component-state* state)
-              (*current-component-init-args* args))
+        (let ((*current-component-state* state))
           (apply (symbol-function func-name) args))
         (error "Component ~A not found" name))))
 
@@ -336,20 +313,33 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
     ((listp value) (mapcar #'normalize-state-keys value))
     (t value)))
 
+(defun parse-child-call (rest)
+  "Split the tail of a child component or layout call into its parts.
+Returns (values PROPS-PLIST CONTENT-SEXPS), where PROPS-PLIST comes from the
+leading (@ (prop val) ...) block, if any, and CONTENT-SEXPS is what follows it."
+  (let* ((has-attrs (and rest
+                         (listp (car rest))
+                         (symbolp (caar rest))
+                         (string= (string (caar rest)) "@")))
+         (attrs (when has-attrs (cdar rest))))
+    (values (loop for (k v) in attrs
+                  append (list (make-keyword (string-upcase (string k))) v))
+            (if has-attrs (cdr rest) rest))))
+
+(defun component-call-args (props-plist content-sexps)
+  "Build the keyword arguments a child component call passes to the component."
+  (if content-sexps
+      (list* :children content-sexps props-plist)
+      props-plist))
+
 (defun expand-child-component (tag rest)
   "Expand a child component or layout S-expression call into an HTML string.
 For components: (tag (@ (prop val) ...)) — props come from the @ attribute list.
 For layouts: (tag (@ (prop val) ...) body...) — @ props plus remaining sexps become :children.
 A `key` prop is used as this child's path segment instead of its position, so a
 keyed child keeps its component-id when siblings are re-ordered or removed."
-  (let* ((has-attrs (and rest
-                         (listp (car rest))
-                         (symbolp (caar rest))
-                         (string= (string (caar rest)) "@")))
-         (attrs (when has-attrs (cdar rest)))
-         (props-plist (loop for (k v) in attrs
-                            append (list (make-keyword (string-upcase (string k))) v)))
-         (comp-info (gethash (string-downcase (string tag)) *component-registry*))
+  (multiple-value-bind (props-plist content-sexps) (parse-child-call rest)
+   (let* ((comp-info (gethash (string-downcase (string tag)) *component-registry*))
          (layout-info (gethash (string-downcase (string tag)) *layout-registry*))
          ;; Position of this child inside its parent. Consumed for layouts too,
          ;; so that the numbering does not depend on what kind of call a sibling
@@ -357,8 +347,7 @@ keyed child keeps its component-id when siblings are re-ordered or removed."
          (path (append *component-path* (list (next-child-segment (getf props-plist :KEY))))))
     (cond
       (comp-info
-       (let* ((content-sexps (if has-attrs (cdr rest) rest))
-              (child-id (format-component-id (string-downcase (string tag)) path))
+       (let* ((child-id (format-component-id (string-downcase (string tag)) path))
               ;; Restore the state the browser reported for this instance. nil on
               ;; an initial render, and nil whenever the instance is new, in which
               ;; case let-component-state falls back to its initial values.
@@ -366,12 +355,9 @@ keyed child keeps its component-id when siblings are re-ordered or removed."
               (*component-path* path)
               (*child-index* (list 0)))
          (render-html (apply #'render-component tag child-state
-                             (if content-sexps
-                                 (list* :children content-sexps props-plist)
-                                 props-plist)))))
+                             (component-call-args props-plist content-sexps)))))
       (layout-info
-       (let* ((content-sexps (if has-attrs (cdr rest) rest))
-              (children (if (= (length content-sexps) 1)
+       (let* ((children (if (= (length content-sexps) 1)
                             (car content-sexps)
                             content-sexps))
               (layout-fn (symbol-function (getf layout-info :name)))
@@ -379,7 +365,72 @@ keyed child keeps its component-id when siblings are re-ordered or removed."
               (*child-index* (list 0)))
          (render-html (apply layout-fn :children children props-plist))))
       (t
-       (error "Unknown component or layout: ~A" tag)))))
+       (error "Unknown component or layout: ~A" tag))))))
+
+(defun collect-child-calls (sexp)
+  "Enumerate the child component and layout calls in SEXP.
+Returns a list of (SEGMENT TAG REST) in the order the renderer expands them,
+without descending into the children themselves. The renderer itself does the
+walking, so the segments match exactly what a real render would assign."
+  (let ((calls '())
+        (*child-index* (list 0)))
+    (let ((*component-expander*
+            (lambda (tag rest)
+              (multiple-value-bind (props-plist content-sexps) (parse-child-call rest)
+                (declare (ignore content-sexps))
+                (push (list (next-child-segment (getf props-plist :KEY)) tag rest) calls)
+                ""))))
+      (render-html sexp))
+    (nreverse calls)))
+
+(defun render-node-sexp (tag props path)
+  "Render the component or layout TAG at PATH to an S-expression (no HTML).
+State is restored from *client-state-tree* by the id the node has at PATH."
+  (let* ((name (string-downcase (string tag)))
+         (comp-info (gethash name *component-registry*))
+         (layout-info (gethash name *layout-registry*)))
+    (cond
+      (comp-info
+       (let ((*component-path* path)
+             (*child-index* (list 0))
+             (*forced-component-id* nil))
+         (apply #'render-component tag (client-state-for (format-component-id name path))
+                props)))
+      (layout-info
+       (let ((*component-path* path)
+             (*child-index* (list 0))
+             (*forced-component-id* nil))
+         (apply (symbol-function (getf layout-info :name)) props)))
+      (t (error "Unknown component or layout: ~A" tag)))))
+
+(defun resolve-target-args (root-component root-props path)
+  "Walk the tree from the root along PATH and return (values TAG PROPS) for the node there.
+
+PATH is the component-id path, outermost segment first, so its first element is
+the root's own segment. Only the ancestors named by PATH are rendered -- one body
+evaluation per level, with sibling subtrees left alone -- which recomputes the
+props of the target instead of remembering them between requests. The state each
+ancestor needs comes from *client-state-tree*."
+  (let ((tag root-component)
+        (props root-props)
+        (walked (list (or (first path) "0"))))
+    (dolist (segment (rest path))
+      (let* ((sexp (render-node-sexp tag props walked))
+             (hit (find segment (collect-child-calls sexp)
+                        :key #'first :test #'string=)))
+        (unless hit
+          (error "No child at segment ~S under ~A (path ~{~A~^.~})" segment tag walked))
+        (multiple-value-bind (child-props content-sexps) (parse-child-call (third hit))
+          (setf tag (second hit))
+          (setf props
+                (if (gethash (string-downcase (string tag)) *component-registry*)
+                    (component-call-args child-props content-sexps)
+                    (list* :children (if (= (length content-sexps) 1)
+                                         (car content-sexps)
+                                         content-sexps)
+                           child-props))))
+        (setf walked (append walked (list segment)))))
+    (values tag props)))
 
 (defun render-component-tree-html (name state args
                                    &key client-state-tree component-path
@@ -399,9 +450,7 @@ performs for a single subtree."
     (render-html (apply #'render-component name state args))))
 
 (defun render-component-html (name state &rest args)
-  "Render a component to an HTML string, expanding nested component and layout calls.
-If *current-render-registry* is bound to a hash by the caller (e.g. handle-render),
-each component's init-args are registered in it keyed by component-id."
+  "Render a component to an HTML string, expanding nested component and layout calls."
   (render-component-tree-html name state args))
 
 (defun render-layout-html (name &rest args)

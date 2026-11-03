@@ -93,7 +93,7 @@ When `fetch-fn` is provided it takes priority over `rows`.
 | `next-label`  | string   | `"Next"`     | Label for the Next button. |
 | `prev-label`  | string   | `"Previous"` | Label for the Previous button. |
 | `empty-label` | string   | `"No data"`  | Message shown when there are no rows to display. |
-| `id`          | string   | `nil`        | HTML `id` attribute on the root element. Required when embedding multiple instances on the same page so each gets a unique `data-component-id`. |
+| `id`          | string   | `nil`        | HTML `id` attribute on the root element. Useful as a CSS/test selector; it does not affect `data-component-id`. |
 
 ## Data formats
 
@@ -146,8 +146,10 @@ distinguish their states:
 (data-table (@ (id "orders-table")  (rows ,orders)  (page-size 5)))
 ```
 
-Without an explicit `id`, the framework auto-assigns one, but the selector
-used in `data-component-id` attributes will not be predictable.
+`data-component-id` is assigned by the framework from the component's position in
+the tree (`data-table-0.1`), independently of this `id`. Multiple instances on one
+page need no `id` to be told apart; pass `key` if you want an instance's identity
+to survive siblings being re-ordered or removed.
 
 ## Pagination behaviour
 
