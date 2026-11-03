@@ -198,7 +198,17 @@ A child component may declare its own `let-component-state`. Each instance is id
   <div data-component="counter-child" data-component-id="counter-child-0.1" data-state='{"COUNT":2}'>
 ```
 
-Because the path does not depend on the render pass, re-rendering one subtree produces the same ids as a full page render. On every action the client POSTs the whole state tree, and the server restores each nested component's state by id — so a parent's re-render no longer resets its children. A component that was not in the tree the browser reported (a list item that has just been added, for instance) starts from its props.
+Because the path does not depend on the render pass, re-rendering one subtree produces the same ids as a full page render. On every action the client POSTs the state of every component that has any, as a flat map keyed by id, and the server restores each nested component's state from it — so a parent's re-render no longer resets its children. A component the browser did not report (a list item that has just been added, for instance) starts from its props.
+
+```json
+{"action": ["TOGGLE-DONE", 3],
+ "component": "todo",
+ "component-id": "todo-0",
+ "state": {"todo-0": {"NEXT-ID": 20, "TODOS": [...]}},
+ "render-token": "..."}
+```
+
+The map is flat, and components with no state of their own are left out: the id already says where a component sits, so the server rebuilds the shape from the ids. Only what the component declared in `let-component-state` travels.
 
 #### `key`
 
@@ -846,7 +856,7 @@ Browser                          Server (Common Lisp)
   |  User clicks a button          |
   |                                |
   |  POST /action                  |
-  |  { action, state }             |
+  |  { action, component, state }  |
   |------------------------------->|  Execute action, re-render
   |  { html, state }               |
   |<-------------------------------|

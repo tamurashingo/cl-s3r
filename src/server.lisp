@@ -8,6 +8,7 @@
                 #:*error-page-registry*
                 #:*client-state-tree*
                 #:resolve-target-args
+                #:format-component-id
                 #:call-component-action
                 #:render-component
                 #:render-component-html
@@ -100,33 +101,21 @@
                 (and (string= expected provided-hmac)
                      (<= 0 age max-age-seconds))))))))))
 
-(defun find-state-by-component-id (state-tree component-id)
-  "Recursively search STATE-TREE for the node whose component-id equals COMPONENT-ID.
-STATE-TREE uses jonathan's :|key| keyword style. Returns the node plist or NIL."
-  (when state-tree
-    (if (equal (getf state-tree :|component-id|) component-id)
-        state-tree
-        (loop for child in (getf state-tree :|children|)
-              for found = (find-state-by-component-id child component-id)
-              when found return found))))
-
-(defun normalize-node-state (node)
-  "Return NODE's own state as an upcase-keyword plist."
+(defun normalize-reported-state (state)
+  "Return one component's reported state as an upcase-keyword plist."
   (normalize-state-keys
-   (loop for (k v) on (getf node :|state|) by #'cddr
+   (loop for (k v) on state by #'cddr
          append (list (make-keyword (string-upcase (string k))) v))))
 
-(defun collect-client-states (node &optional (table (make-hash-table :test 'equal)))
-  "Index every node of the state tree the browser sent by its component-id.
-The re-render reads this so that nested components keep the state they held in
-the DOM instead of being re-initialised from their props."
-  (when node
-    (let ((id (getf node :|component-id|)))
-      (when (and id (not (string= id "")))
-        (setf (gethash id table) (normalize-node-state node))))
-    (dolist (child (getf node :|children|))
-      (collect-client-states child table)))
-  table)
+(defun collect-client-states (state-map)
+  "Index the state the browser reported, keyed by component-id.
+STATE-MAP is the flat component-id -> state object the client sends, as jonathan
+parsed it. The re-render reads this so that nested components keep the state they
+held in the DOM instead of being re-initialised from their props."
+  (let ((table (make-hash-table :test 'equal)))
+    (loop for (id state) on state-map by #'cddr
+          do (setf (gethash (string id) table) (normalize-reported-state state)))
+    table))
 
 (defun split-on-char (string char)
   "Split STRING on CHAR, dropping empty pieces."
@@ -447,28 +436,27 @@ ROOT-COMPONENT and ROOT-PROPS come from the route definition and the request URL
 not from the client. Everything else about the page is reconstructed from them:
 the target's props by walking the tree down to it, and every component's state
 from what the browser reported."
-  (let* ((action              (getf payload :|action|))
-         (render-token        (getf payload :|render-token|))
-         (target-component-id (getf payload :|component-id|))
-         (root-state-node     (getf payload :|state|)))
+  (let* ((action        (getf payload :|action|))
+         (render-token  (getf payload :|render-token|))
+         ;; Every component's state, so the re-rendered subtree can restore its
+         ;; nested components rather than reset them.
+         (client-states (collect-client-states (getf payload :|state|)))
+         (component-name (or (getf payload :|component|) root-component))
+         (target-component-id
+          (let ((id (getf payload :|component-id|)))
+            (if (and id (not (string= id "")))
+                id
+                (format-component-id (string-downcase (string root-component))
+                                     (list "0"))))))
 
     (unless (validate-render-token render-token)
       (return-from handle-action
         '(409 (:content-type "application/json")
               ("{\"error\":\"render-token expired\"}"))))
 
-    (let* ((target-node
-            (if (and target-component-id (not (string= target-component-id "")))
-                (or (find-state-by-component-id root-state-node target-component-id)
-                    root-state-node)
-                root-state-node))
-           (component-name    (getf target-node :|component|))
-           (action-name       (car action))
-           (action-args       (cdr action)))
-      (let* ((state-plist (normalize-node-state target-node))
-             ;; Every node's state, so the re-rendered subtree can restore its
-             ;; nested components rather than reset them.
-             (client-states (collect-client-states root-state-node))
+    (let* ((action-name (car action))
+           (action-args (cdr action)))
+      (let* ((state-plist (gethash target-component-id client-states))
              (target-path (or (component-id-path target-component-id component-name)
                               (list "0")))
              ;; Recompute the target's props by rendering only the ancestors named by

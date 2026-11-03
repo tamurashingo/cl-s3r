@@ -25,110 +25,42 @@ function handleTokenExpired(config) {
 }
 
 /**
- * Recursively collect component states from the given root element.
- * @param {HTMLElement} element - The element to start traversal from
- * @returns {Object|null} Hierarchical state object
+ * Collect the state of every component under ROOTELEMENT.
+ *
+ * The result is flat -- component-id -> state -- because a component-id encodes
+ * the component's position in the tree, so the server can rebuild the shape from
+ * the ids alone. Components with no state of their own are left out entirely;
+ * sending an envelope for them (name, empty state, empty children, id) was most
+ * of the payload.
+ *
+ * @param {HTMLElement} rootElement
+ * @returns {Object} component-id -> state
  */
-export function collectStates(element) {
-  // Identify components by data-state attribute or hyphenated tag name
-  const isComponent = element.hasAttribute('data-state') || element.tagName.includes('-');
+export function collectStates(rootElement) {
+  const states = {};
 
-  if (!isComponent) {
-    // Not a component — search children
-    for (const child of element.children) {
-      const result = collectStates(child);
-      if (result) return result; // Return the first component found (for root lookup)
-    }
-    return null;
-  }
-
-  // Build the state node for this component
-  const node = {
-    component: element.getAttribute('data-component') || element.tagName.toLowerCase(),
-    state: {},
-    children: []
-  };
-
-  // Parse own state
-  const stateStr = element.getAttribute('data-state');
-  if (stateStr) {
-    try {
-      node.state = JSON.parse(stateStr);
-    } catch (e) {
-      console.error(`Failed to parse state for ${node.component}:`, e);
-    }
-  }
-
-  // Attach id if present
-  const id = element.getAttribute('id');
-  if (id) {
-    node.id = id;
-  }
-
-  // Attach component-id if present
-  const componentId = element.getAttribute('data-component-id');
-  if (componentId) {
-    node['component-id'] = componentId;
-  }
-
-  // Recursively collect child components
-  for (const child of element.children) {
-    collectChildStates(child, node.children);
-  }
-
-  return node;
-}
-
-/**
- * Recursively find child components in the element tree and append to the list.
- * @param {HTMLElement} element
- * @param {Array} childrenList
- */
-function collectChildStates(element, childrenList) {
-  const isComponent = element.hasAttribute('data-state') || element.tagName.includes('-');
-
-  if (isComponent) {
-    const node = {
-      component: element.getAttribute('data-component') || element.tagName.toLowerCase(),
-      state: {},
-      children: []
-    };
-
-    const stateStr = element.getAttribute('data-state');
-    if (stateStr) {
+  const visit = (element) => {
+    const id = element.getAttribute('data-component-id');
+    const raw = element.getAttribute('data-state');
+    if (id && raw) {
       try {
-        node.state = JSON.parse(stateStr);
+        const state = JSON.parse(raw);
+        if (state && typeof state === 'object' && Object.keys(state).length > 0) {
+          states[id] = state;
+        }
       } catch (e) {
-        console.error(`Failed to parse state for ${node.component}:`, e);
+        console.error(`Failed to parse state for ${id}:`, e);
       }
     }
+    for (const child of element.children) visit(child);
+  };
 
-    const id = element.getAttribute('id');
-    if (id) {
-      node.id = id;
-    }
-
-    const componentId = element.getAttribute('data-component-id');
-    if (componentId) {
-      node['component-id'] = componentId;
-    }
-
-    // Continue searching for nested child components
-    for (const child of element.children) {
-      collectChildStates(child, node.children);
-    }
-
-    childrenList.push(node);
-  } else {
-    // Not a component — continue traversing its children
-    for (const child of element.children) {
-      collectChildStates(child, childrenList);
-    }
-  }
+  visit(rootElement);
+  return states;
 }
 
 /**
- * Send an action and the current state tree to the server.
+ * Send an action and the collected component state to the server.
  * @param {Array} action - Action descriptor array
  * @param {HTMLElement} componentElement - The component that owns the action
  * @param {HTMLElement} rootElement - The root component element (for state collection)
@@ -136,10 +68,13 @@ function collectChildStates(element, childrenList) {
  */
 export async function sendAction(action, componentElement, rootElement,
                                  { apiPrefix = '', tokenExpired = null } = {}) {
-  const state = collectStates(rootElement);
   const payload = {
     action,
-    state,
+    state: collectStates(rootElement),
+    // The component name travels alongside the id: the server splits the id into
+    // "<name>-<path>" to find the component's place in the tree, and checks that
+    // what sits there is what the browser thinks it is.
+    component: componentElement.getAttribute('data-component') || undefined,
     'component-id': componentElement.getAttribute('data-component-id') || undefined,
     'render-token': _renderToken
   };

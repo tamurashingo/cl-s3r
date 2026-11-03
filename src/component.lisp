@@ -19,6 +19,7 @@
            #:*component-path*
            #:*client-state-tree*
            #:resolve-target-args
+           #:format-component-id
            #:call-component-action
            #:render-component
            #:render-component-html
