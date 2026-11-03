@@ -79,8 +79,9 @@ own, and carries `data-on-click='["PARENT-BUMP"]'`. It is dispatched to the root
 
 ```json
 {"action":["PARENT-BUMP"],
+ "component":"case4-app",
  "component-id":"case4-app-0",
- "state":{"component":"case4-app", ...}}
+ "state":{"case4-app-0":{"PARENT-COUNT":0},"stateful-wrapper-0.0":{"HITS":0}}}
 ```
 
 Each component advertises the actions its `let-function` registered, and the
