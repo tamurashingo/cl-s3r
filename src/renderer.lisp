@@ -25,7 +25,8 @@
     (t (princ-to-string str))))
 
 (defun render-attribute (key value)
-  "Render an attribute. Event handlers (on*) are converted to data-on-* with JSON value."
+  "Render an attribute. Event handlers (on*) are converted to data-on-* with JSON
+value, and `key` to data-key, which the DOM morph uses to match children."
   (let ((attr-name (string-downcase (string key))))
     (cond
       ((starts-with-subseq "on" attr-name)
@@ -33,6 +34,11 @@
        (format nil " data-on-~A='~A'"
                (subseq attr-name 2)
                (jonathan:to-json value)))
+      ((string= attr-name "key")
+       ;; Identity for the DOM morph: a keyed element keeps its node, and with it
+       ;; focus, scroll position and typed-in values, when siblings move around it.
+       ;; (On a child component call `key` is consumed as a prop and never gets here.)
+       (format nil " data-key=\"~A\"" (escape-html value)))
       (t
        ;; Normal attribute
        (format nil " ~A=\"~A\""

@@ -212,7 +212,11 @@ Children in a list are numbered by position, so re-ordering or deleting items mo
                                     (title ,(getf todo :title)))))))
 ```
 
-`key` only matters for children that own state, or that wrap something which does.
+`key` also identifies the element for the DOM morph (see below), so give it to list children that hold anything the server does not know about -- typed text, focus, an open `<details>`. On a plain element, write it the same way and it is rendered as `data-key`:
+
+```lisp
+(:li (@ (key ,(getf todo :id))) ...)
+```
 
 ### Form Submission
 
@@ -232,6 +236,39 @@ The action handler receives form fields as a plist keyed by field name:
   (let ((title (getf form-data :|todo-text|)))
     ...))
 ```
+
+## DOM Morphing
+
+An action's response is not swapped into the page: `cl-morph` walks the live DOM and
+applies only what changed, so elements keep their identity where possible.
+
+### What is preserved
+
+Children are matched by key where one is available -- `data-component-id` for a
+component root, `data-key` for a plain element written as `(@ (key ...))` -- and by
+position otherwise. A matched element is reused, which keeps everything the browser
+holds and the server does not know about:
+
+| Preserved on a matched element | Lost when an element is replaced |
+|---|---|
+| Focus and selection | tag name changed |
+| Scroll position | node type changed |
+| Text typed into an input (`value` is never overwritten) | no key, and the position no longer lines up |
+| `<details open>`, media playback position, canvas contents | |
+| A running CSS transition (the element stays in place, so it animates — see `sample/05-carousel`) | |
+
+Attributes are synced. Of the DOM *properties*, only `checked` is pushed from the
+server: a checkbox is a commit-driven control, so the server owns its state. `value`
+is deliberately left alone, because text inputs are uncontrolled — what the user has
+typed is never overwritten by a re-render.
+
+### Why keys matter
+
+Without a key, children are paired up by position. Insert an item at the front of a
+list and every element after it is matched against its neighbour's content: the nodes
+are not replaced, their contents are rewritten, so focus and typed-in text stay where
+they were and now belong to the wrong item. With a key, the element travels with its
+item. `sample/11-nested` (`/case11`) shows both side by side.
 
 ## Layout System
 

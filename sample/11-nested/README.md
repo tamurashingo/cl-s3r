@@ -54,6 +54,7 @@ Verified in Chromium against a locally running server.
 | 8 | `/case8` | stateful child inside a stateful child | works — ids stay unique (#33) |
 | 9 | `/case9` | stateful children in a list, with and without `key` | `key` follows the item; without it, state follows the position |
 | 10 | `/case10` | an action no component defines | the server answers 422 and the client logs it |
+| 11 | `/case11` | DOM preservation when a list changes | a keyed element keeps its node, and the text typed into it |
 
 ### Case 3 — a parent re-render keeps the nested child's state
 
@@ -158,6 +159,26 @@ cl-s3r: action "NO-SUCH-ACTION" is not defined in component "case10-app" (availa
 A dropped action used to be a 200 with unchanged HTML, which is why a mis-routed
 callback was so hard to spot.
 
+### Case 11 — DOM preservation when a list changes
+
+Typing into a text input sends nothing to the server (commit-only), so what the
+user typed lives only in the DOM. It survives a re-render exactly when the DOM
+morph keeps that element.
+
+Typing into **bravo** in both rows and then clicking `prepend`:
+
+```
+with key    : new-1:""   alpha:""            bravo:"bravo-text"   charlie:""
+without key : new-1:""   alpha:"bravo-text"  bravo:""             charlie:""
+```
+
+With a key the element itself is reused -- a marker set on the live DOM node from
+the console is still on it afterwards -- so the text travels with bravo. Without
+one, children are matched by position, and position 1 (now alpha) keeps the text.
+
+The morph takes its key from `data-component-id` for component roots, or from
+`data-key` for a plain element written as `(@ (key ...))`.
+
 ## What to keep in mind
 
 * State lives wherever you declare it, but a component that is *not* in the DOM
@@ -169,6 +190,9 @@ callback was so hard to spot.
 * An `id` attribute in a component's own markup is a plain HTML id and has no
   effect on `data-component-id`, which always comes from the component's position
   in the tree. Use `key` to pin identity.
+* Anything the browser holds but the server does not know about -- typed text,
+  focus, scroll position, an open `<details>`, a running transition -- survives a
+  re-render only while the morph keeps that element. Give list children a `key`.
 
 ## Testing nested behaviour
 
