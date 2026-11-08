@@ -476,14 +476,16 @@ from what the browser reported."
              ;; Recompute the target's props by rendering only the ancestors named by
              ;; its path. A page whose shape no longer matches what the browser holds
              ;; is answered with 409, the same as an expired token, so the client reloads.
+             (target-ancestor-actions nil)
              (target-args
               (handler-case
                   (let ((*client-state-tree* client-states))
-                    (multiple-value-bind (tag props)
+                    (multiple-value-bind (tag props actions)
                         (resolve-target-args root-component root-props target-path)
                       (unless (string-equal (string tag) (string component-name))
                         (error "component at ~{~A~^.~} is ~A, not ~A"
                                target-path tag component-name))
+                      (setf target-ancestor-actions actions)
                       props))
                 (fetch-failed (e)
                   (return-from handle-action (fetch-failed-json e)))
@@ -498,7 +500,8 @@ from what the browser reported."
                                                :forced-component-id target-component-id
                                                :component-init-args target-args
                                                :component-path target-path
-                                               :client-state-tree client-states)
+                                               :client-state-tree client-states
+                                               :ancestor-actions target-ancestor-actions)
                         (fetch-failed (e)
                           (return-from handle-action (fetch-failed-json e)))
                         (action-not-found (e)

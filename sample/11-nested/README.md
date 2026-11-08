@@ -56,6 +56,7 @@ Verified in Chromium against a locally running server.
 | 10 | `/case10` | an action no component defines | the server answers 422 and the client logs it |
 | 11 | `/case11` | DOM preservation when a list changes | a keyed element keeps its node, and the text typed into it |
 | 12 | `/case12` | `change` events: select, radio, checkbox, text | each control reports its value; select and radio follow the server, text does not |
+| 13 | `/case13` | a child defines an action named like its parent's | each bump increments its own counter |
 
 ### Case 3 — a parent re-render keeps the nested child's state
 
@@ -210,6 +211,28 @@ field is *uncontrolled*: `value` is never overwritten, so what was typed stays.
 Do not put `onchange` on a control that already has `onclick` (the `checkbox`
 component uses a label click) -- the action would be sent twice.
 
+### Case 13 — an action named the same as its parent's
+
+The root and the child both define `bump`, and the root passes its own down as a
+prop. In the DOM the child's button and the passed one would be indistinguishable,
+since an action's name is all the browser gets — so the passed callback carries the
+id of the component that defines it:
+
+```html
+<button class="own-bump"    data-on-click='["BUMP"]'>              <!-- the child's -->
+<button class="passed-bump" data-on-click='["bump@case13-app-0"]'> <!-- the root's  -->
+```
+
+Each button increments its own counter. The child is also reported while rendering,
+because its own `bump` shadows the name for anything else inside it:
+
+```
+Warning: same-name-wrapper-0.0 declares action bump, which case13-app-0 also declares.
+```
+
+Sibling components may share an action name freely — they are not each other's
+ancestors, so nothing is shadowed.
+
 ## What to keep in mind
 
 * State lives wherever you declare it, but a component that is *not* in the DOM
@@ -221,6 +244,9 @@ component uses a label click) -- the action would be sent twice.
 * An `id` attribute in a component's own markup is a plain HTML id and has no
   effect on `data-component-id`, which always comes from the component's position
   in the tree. Use `key` to pin identity.
+* Two components may define the same action name. Watch for the warning when a
+  child declares one of its ancestor's names: its own markup then shadows that
+  name, even though callbacks passed into it are still bound correctly.
 * Anything the browser holds but the server does not know about -- typed text,
   focus, scroll position, an open `<details>`, a running transition -- survives a
   re-render only while the morph keeps that element. Give list children a `key`.

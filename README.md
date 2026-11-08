@@ -199,6 +199,24 @@ Every component advertises the actions its own `let-function` registered, in a `
 
 When an event fires, the client walks up from the element to the nearest ancestor that advertises that action and dispatches to it. A callback passed down as a prop therefore reaches the component that defines it, even when it is rendered inside a child that has state of its own.
 
+A callback that was passed down as a prop does not rely on that search. An action's name is all the browser would otherwise get, so a child that declares an action of the same name would answer the click instead of the component that defined it. Where the callback is handed over, the defining component is still known, and its id is folded into the name:
+
+```html
+<!-- the child's own bump                      the bump the root handed down -->
+<button data-on-click='["BUMP"]'>          <button data-on-click='["bump@todo-0"]'>
+```
+
+The client sends the bare name and dispatches to that component, so the two cannot be confused. Appending an argument still works — `(append on-toggle (list id))` gives `["toggle-done@todo-0", 3]` — because only the name is rewritten.
+
+Two components may define the same action name: siblings never see each other, and the qualified name keeps an ancestor's callback out of a child's reach. A child that declares an action its ancestor also declares is reported while rendering, since its own buttons then shadow the ancestor's name:
+
+```
+Warning: same-name-wrapper-0.0 declares action bump, which case13-app-0 also declares.
+A callback named bump and rendered inside same-name-wrapper-0.0 is handled by same-name-wrapper-0.0.
+```
+
+`sample/11-nested` (`/case13`) has both on one page.
+
 If no ancestor advertises the action, the request is sent to the root component and the server answers `422` with the action name, the component it reached, and the actions that component does define. The client logs it:
 
 ```

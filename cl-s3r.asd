@@ -29,7 +29,8 @@
   :description "Tests for the cl-s3r core"
   :depends-on ("cl-s3r" "rove")
   :components ((:module "test"
-                :components ((:file "fetch"))))
+                :components ((:file "fetch")
+                             (:file "actions"))))
   :perform (test-op (o c)
     (uiop:symbol-call :rove :run c)))
 
