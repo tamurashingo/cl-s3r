@@ -20,6 +20,8 @@
            #:*client-state-tree*
            #:resolve-target-args
            #:format-component-id
+           #:*ancestor-actions*
+           #:action-owner-separator
            #:call-component-action
            #:render-component
            #:render-component-html
@@ -131,6 +133,71 @@ follows the child around when siblings are re-ordered, inserted or removed."
     (*child-index* (prog1 (princ-to-string (car *child-index*))
                      (incf (car *child-index*))))
     (t "0")))
+
+;; Actions are identified by name, and a name is all that reaches the browser, so
+;; a child that declares an action its ancestor also declares would capture the
+;; ancestor's callback: the client dispatches to the nearest component advertising
+;; the name. *ANCESTOR-ACTIONS* is an alist of (action-name . component-id) for the
+;; components enclosing the one being rendered, which lets a callback passed down
+;; as a prop be stamped with the id of the component that actually defines it.
+(defvar *ancestor-actions* nil)
+
+(defparameter action-owner-separator #\@
+  "Separates an action's name from the id of the component that defines it, in the
+qualified name a passed-down callback carries: \"toggle-done@todo-0\".")
+
+(defun action-name-of (action)
+  "Return the name an ACTION S-expression invokes, or NIL if it is not one."
+  (when (and (consp action) (atom (car action)) (car action))
+    (let ((head (car action)))
+      (cond ((symbolp head) (string-downcase (symbol-name head)))
+            ((stringp head) head)
+            (t nil)))))
+
+(defun qualified-action-name-p (name)
+  (and name (find action-owner-separator name)))
+
+(defun qualify-action (action owner-id)
+  "Return ACTION with its name qualified by OWNER-ID, leaving the arguments alone.
+The head is replaced by a string rather than wrapped, so that the usual way of
+building a per-item callback -- (append on-toggle (list id)) -- keeps working."
+  (cons (format nil "~A~A~A" (action-name-of action) action-owner-separator owner-id)
+        (cdr action)))
+
+(defun callback-prop-p (key)
+  "True for prop names that carry an event callback, by the `on*` convention."
+  (let ((name (string-downcase (string key))))
+    (and (>= (length name) 2) (string= "on" name :end2 2))))
+
+(defun stamp-callback-props (props)
+  "Qualify the callbacks in PROPS with the id of the component that defines them.
+
+A callback travels down as data -- (toggle-done) -- and the name is all the
+browser gets, so an intervening child that happens to declare `toggle-done` would
+answer the click instead. Here, where the callback is handed over, the defining
+component is still known, so its id is folded into the name."
+  (loop for (key value) on props by #'cddr
+        append (list key
+                     (let ((name (and (callback-prop-p key) (action-name-of value))))
+                       (if (or (null name) (qualified-action-name-p name))
+                           value
+                           (let ((owner (cdr (assoc name *ancestor-actions*
+                                                    :test #'string-equal))))
+                             (if owner (qualify-action value owner) value)))))))
+
+(defun warn-shadowed-actions (component-id own-actions)
+  "Warn when OWN-ACTIONS hides an action of an enclosing component."
+  (dolist (name own-actions)
+    (let ((owner (cdr (assoc name *ancestor-actions* :test #'string-equal))))
+      (when owner
+        (format *error-output*
+                "Warning: ~A declares action ~A, which ~A also declares. A callback ~
+                 named ~A and rendered inside ~A is handled by ~A.~%"
+                component-id name owner name component-id component-id)))))
+
+(defun extend-ancestor-actions (component-id own-actions)
+  (append (mapcar (lambda (name) (cons name component-id)) own-actions)
+          *ancestor-actions*))
 
 (defun client-state-for (component-id)
   "Return the state the browser reported for COMPONENT-ID, or nil."
@@ -244,7 +311,7 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
 
 (defun call-component-action (component-name action-name args current-state
                              &key forced-component-id component-init-args
-                                  component-path client-state-tree)
+                                  component-path client-state-tree ancestor-actions)
   (let* ((comp-info (gethash (string-downcase (string component-name)) *component-registry*))
          (func-name (getf comp-info :name)))
     (if func-name
@@ -286,12 +353,25 @@ Layouts can receive :children as a keyword arg and may call other layouts by sym
             ;; lets those children pick their own state back up instead of restarting
             ;; from their props.
             (let ((final-html
-                   (let ((*component-path* (or component-path (list "0")))
-                         (*child-index* (list 0))
-                         (*client-state-tree* client-state-tree)
-                         (*forced-component-id* forced-component-id)
-                         (*component-expander* #'expand-child-component))
-                     (render-html (run-comp)))))
+                   (let* ((*component-path* (or component-path (list "0")))
+                          (*child-index* (list 0))
+                          (*client-state-tree* client-state-tree)
+                          (*forced-component-id* forced-component-id)
+                          (*component-expander* #'expand-child-component)
+                          (target-id (or forced-component-id
+                                         (format-component-id
+                                          (string-downcase (string component-name))
+                                          *component-path*)))
+                          (mark *current-component-functions*)
+                          (sexp (run-comp))
+                          (own (mapcar #'car (ldiff *current-component-functions* mark)))
+                          ;; ANCESTOR-ACTIONS comes from the spine walk, so callbacks
+                          ;; handed to this subtree are stamped with their owner just
+                          ;; as they would be in a full render.
+                          (*ancestor-actions*
+                           (append (mapcar (lambda (name) (cons name target-id)) own)
+                                   ancestor-actions)))
+                     (render-html sexp))))
               (list :html final-html :state *current-component-state*))))
         (error "Component ~A not found" component-name))))
 
@@ -353,10 +433,19 @@ keyed child keeps its component-id when siblings are re-ordered or removed."
               ;; an initial render, and nil whenever the instance is new, in which
               ;; case let-component-state falls back to its initial values.
               (child-state (client-state-for child-id))
+              ;; Bind the callbacks to whoever defines them before handing them over.
+              (child-args (component-call-args (stamp-callback-props props-plist)
+                                               content-sexps))
               (*component-path* path)
-              (*child-index* (list 0)))
-         (render-html (apply #'render-component tag child-state
-                             (component-call-args props-plist content-sexps)))))
+              (*child-index* (list 0))
+              ;; The functions this child registers are the ones pushed while its
+              ;; body runs; its own children are expanded later, from its sexp.
+              (mark *current-component-functions*)
+              (sexp (apply #'render-component tag child-state child-args))
+              (own (mapcar #'car (ldiff *current-component-functions* mark))))
+         (warn-shadowed-actions child-id own)
+         (let ((*ancestor-actions* (extend-ancestor-actions child-id own)))
+           (render-html sexp))))
       (layout-info
        (let* ((children (if (= (length content-sexps) 1)
                             (car content-sexps)
@@ -405,33 +494,43 @@ State is restored from *client-state-tree* by the id the node has at PATH."
       (t (error "Unknown component or layout: ~A" tag)))))
 
 (defun resolve-target-args (root-component root-props path)
-  "Walk the tree from the root along PATH and return (values TAG PROPS) for the node there.
+  "Walk the tree from the root along PATH, returning (values TAG PROPS ANCESTOR-ACTIONS).
 
 PATH is the component-id path, outermost segment first, so its first element is
 the root's own segment. Only the ancestors named by PATH are rendered -- one body
 evaluation per level, with sibling subtrees left alone -- which recomputes the
 props of the target instead of remembering them between requests. The state each
-ancestor needs comes from *client-state-tree*."
+ancestor needs comes from *client-state-tree*.
+
+ANCESTOR-ACTIONS is the (action-name . component-id) alist for those ancestors, so
+the re-render below the target can bind callbacks to whoever defines them exactly
+as a full render would."
   (let ((tag root-component)
         (props root-props)
-        (walked (list (or (first path) "0"))))
+        (walked (list (or (first path) "0")))
+        (actions nil))
     (dolist (segment (rest path))
-      (let* ((sexp (render-node-sexp tag props walked))
+      (let* ((node-id (format-component-id (string-downcase (string tag)) walked))
+             (mark *current-component-functions*)
+             (sexp (render-node-sexp tag props walked))
+             (own (mapcar #'car (ldiff *current-component-functions* mark)))
              (hit (find segment (collect-child-calls sexp)
                         :key #'first :test #'string=)))
         (unless hit
           (error "No child at segment ~S under ~A (path ~{~A~^.~})" segment tag walked))
+        (setf actions (append (mapcar (lambda (name) (cons name node-id)) own) actions))
         (multiple-value-bind (child-props content-sexps) (parse-child-call (third hit))
           (setf tag (second hit))
-          (setf props
-                (if (gethash (string-downcase (string tag)) *component-registry*)
-                    (component-call-args child-props content-sexps)
-                    (list* :children (if (= (length content-sexps) 1)
-                                         (car content-sexps)
-                                         content-sexps)
-                           child-props))))
+          (let ((*ancestor-actions* actions))
+            (setf props
+                  (if (gethash (string-downcase (string tag)) *component-registry*)
+                      (component-call-args (stamp-callback-props child-props) content-sexps)
+                      (list* :children (if (= (length content-sexps) 1)
+                                           (car content-sexps)
+                                           content-sexps)
+                             (stamp-callback-props child-props))))))
         (setf walked (append walked (list segment)))))
-    (values tag props)))
+    (values tag props actions)))
 
 (defun render-component-tree-html (name state args
                                    &key client-state-tree component-path
@@ -443,12 +542,20 @@ nested components restore their state from. COMPONENT-PATH places the component
 in the page (the root position by default) and FORCED-COMPONENT-ID overrides its
 component-id -- together they let a caller reproduce the render pass the server
 performs for a single subtree."
-  (let ((*component-path* (or component-path (list "0")))
-        (*child-index* (list 0))
-        (*client-state-tree* (or client-state-tree *client-state-tree*))
-        (*forced-component-id* forced-component-id)
-        (*component-expander* #'expand-child-component))
-    (render-html (apply #'render-component name state args))))
+  (let* ((*component-path* (or component-path (list "0")))
+         (*child-index* (list 0))
+         (*client-state-tree* (or client-state-tree *client-state-tree*))
+         (*forced-component-id* forced-component-id)
+         (*component-expander* #'expand-child-component)
+         (mark *current-component-functions*)
+         (sexp (apply #'render-component name state args))
+         (own (mapcar #'car (ldiff *current-component-functions* mark)))
+         (*ancestor-actions*
+          (extend-ancestor-actions
+           (or forced-component-id
+               (format-component-id (string-downcase (string name)) *component-path*))
+           own)))
+    (render-html sexp)))
 
 (defun render-component-html (name state &rest args)
   "Render a component to an HTML string, expanding nested component and layout calls."

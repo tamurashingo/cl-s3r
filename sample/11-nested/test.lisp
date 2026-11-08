@@ -15,7 +15,7 @@
 (deftest test-all-case-components-render
   (dolist (name '("nested-index" "case1-app" "case2-app" "case3-app" "case4-app"
                   "case5-app" "case6-app" "case7-app" "case8-app" "case9-app"
-                  "case10-app" "case11-app" "case12-app"))
+                  "case10-app" "case11-app" "case12-app" "case13-app"))
     (testing name
       (let ((result (test-render-component name :args '())))
         (ok (not (null (getf result :sexp))))))))
@@ -233,3 +233,21 @@
       (ok (test-get-state (getf r2 :state) :agreed))
       (ok (equal "typed" (test-get-state (getf r3 :state) :note)))
       (ok (not (test-get-state (getf r4 :state) :agreed))))))
+
+;;; ---------------------------------------------------------------------------
+;;; A callback carries the id of the component that defines it (case 13)
+;;; ---------------------------------------------------------------------------
+
+(deftest test-passed-callback-is-bound-to-its-owner
+  (testing "the child's own action keeps its bare name"
+    (let ((html (test-render-html "case13-app")))
+      (ok (search "class=\"own-bump\" data-on-click='[\"BUMP\"]'" html))))
+
+  (testing "the callback the parent passed down names the parent"
+    (let ((html (test-render-html "case13-app")))
+      (ok (search "data-on-click='[\"bump@case13-app-0\"]'" html))))
+
+  (testing "both components still advertise the bare name"
+    (let ((html (test-render-html "case13-app")))
+      (ok (search "data-component-id=\"case13-app-0\" data-actions=\"bump\"" html))
+      (ok (search "data-component-id=\"same-name-wrapper-0.0\" data-actions=\"bump\"" html)))))

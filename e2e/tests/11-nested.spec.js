@@ -16,7 +16,7 @@ test.describe('nested', () => {
   test('index lists every case', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('ul.index');
-    await expect(page.locator('ul.index li')).toHaveCount(12);
+    await expect(page.locator('ul.index li')).toHaveCount(13);
   });
 
   // --- 1. stateless child invokes a parent action ---
@@ -292,6 +292,66 @@ test.describe('nested', () => {
 
     // the text field is uncontrolled: a re-render never overwrites what was typed
     await expect(page.locator('.note-field')).toHaveValue('typed');
+  });
+
+  // --- 13. an action named the same as its parent's ---
+
+  test('case13: a child and its parent can both define bump', async ({ page }) => {
+    await page.goto('/case13');
+    await page.waitForSelector('.parent');
+
+    // both advertise the bare name, so the name alone cannot say where a click goes
+    await expect(page.locator('[data-component-id="case13-app-0"]'))
+      .toHaveAttribute('data-actions', 'bump');
+    await expect(page.locator('[data-component-id="same-name-wrapper-0.0"]'))
+      .toHaveAttribute('data-actions', 'bump');
+
+    // the child's own button carries the bare name, the passed one names the root
+    await expect(page.locator('.own-bump'))
+      .toHaveAttribute('data-on-click', '["BUMP"]');
+    await expect(page.locator('.passed-bump'))
+      .toHaveAttribute('data-on-click', '["bump@case13-app-0"]');
+  });
+
+  test('case13: each bump increments its own counter', async ({ page }) => {
+    const actions = [];
+    await page.goto('/case13');
+    await page.waitForSelector('.parent');
+    page.on('request', (r) => {
+      if (r.url().includes('/action')) {
+        const d = JSON.parse(r.postData());
+        actions.push([d.action, d['component-id']]);
+      }
+    });
+
+    await page.locator('.own-bump').click();
+    await expect(page.locator('.wrapper-hits')).toHaveText('1');
+    await expect(page.locator('.parent-count')).toHaveText('0');
+
+    // the callback the root handed down reaches the root, not the child that
+    // happens to declare the same name
+    await page.locator('.passed-bump').click();
+    await expect(page.locator('.parent-count')).toHaveText('1');
+    await expect(page.locator('.wrapper-hits')).toHaveText('1');
+
+    expect(actions[0]).toEqual([['BUMP'], 'same-name-wrapper-0.0']);
+    expect(actions[1]).toEqual([['bump'], 'case13-app-0']);
+  });
+
+  test('case13: the binding survives a re-render of the parent', async ({ page }) => {
+    await page.goto('/case13');
+    await page.waitForSelector('.parent');
+
+    // the first click re-renders the root, so the markup the child gets back has
+    // to carry the qualified name again
+    await page.locator('.passed-bump').click();
+    await expect(page.locator('.parent-count')).toHaveText('1');
+    await expect(page.locator('.passed-bump'))
+      .toHaveAttribute('data-on-click', '["bump@case13-app-0"]');
+
+    await page.locator('.passed-bump').click();
+    await expect(page.locator('.parent-count')).toHaveText('2');
+    await expect(page.locator('.wrapper-hits')).toHaveText('0');
   });
 
   // --- 10. an action no component defines ---

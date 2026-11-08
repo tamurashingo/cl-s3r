@@ -28,7 +28,8 @@
     ("/case9" . "9. stateful children in a list, with and without key")
     ("/case10" . "10. an action no component defines")
     ("/case11" . "11. DOM preservation when a list changes")
-    ("/case12" . "12. change events: select, radio, checkbox, text")))
+    ("/case12" . "12. change events: select, radio, checkbox, text")
+    ("/case13" . "13. an action named the same as its parent's")))
 
 (define-layout app-layout (&key children &allow-other-keys)
   `(:html (@ (lang "en"))
@@ -116,6 +117,22 @@ ul.index a { color: #2980b9; text-decoration: none; }
            (:button (@ (class "wrapper-inc") (onclick (wrapper-hit))) "wrapper +1"))
          (:div (@ (class "wrapper-body"))
            ,@(if (listp children) children (list children)))))))
+
+;; A stateful child that declares an action named exactly like its parent's, and
+;; also renders a callback the parent handed down. Both buttons end up with the
+;; same action name in the DOM, so the name alone cannot say where a click goes.
+(define-component same-name-wrapper (&key on-bump &allow-other-keys)
+  (let-component-state ((hits 0))
+    (let-function ((bump ()
+                     (incf hits)))
+      `(:div (@ (class "wrapper"))
+         (:div (@ (class "wrapper-head"))
+           (:span (@ (class "label")) "the child's own bump")
+           (:span (@ (class "wrapper-hits count")) ,hits)
+           (:button (@ (class "own-bump") (onclick (bump))) "child bump"))
+         (:div (@ (class "wrapper-body"))
+           (:span (@ (class "label")) "the parent's bump, passed as a prop")
+           (:button (@ (class "passed-bump") (onclick ,on-bump)) "parent bump"))))))
 
 ;; Stateless middle layer, used to add depth without adding state.
 (define-component mid-section (&key title children &allow-other-keys)
@@ -506,6 +523,30 @@ ul.index a { color: #2980b9; text-decoration: none; }
                         (onchange (set-note))))))))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Case 13: a child declaring an action named like its parent's
+;;; ---------------------------------------------------------------------------
+
+(define-component case13-app (&key &allow-other-keys)
+  (let-component-state ((parent-count 0))
+    (let-function ((bump ()
+                     (incf parent-count)))
+      `(:div
+         (:h2 "Case 13: an action named the same as its parent's")
+         (:p (@ (class "steps"))
+           (:b "Steps: ") "the root and the child both define an action called "
+           (:code "bump") ". Click the child's, then the one the root handed down. "
+           (:b "Expected: ") "each increments its own counter. The name alone cannot "
+           "tell them apart, so a callback passed as a prop carries the id of the "
+           "component that defines it: "
+           (:code "data-on-click='[\"bump@case13-app-0\"]'") ".")
+         (:div (@ (class "parent"))
+           (:div (@ (class "parent-head"))
+             (:span (@ (class "tag")) "root")
+             (:span (@ (class "label")) "parent-count")
+             (:span (@ (class "parent-count count")) ,parent-count))
+           (same-name-wrapper (@ (on-bump (bump)))))))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Routes
 ;;; ---------------------------------------------------------------------------
 
@@ -522,3 +563,4 @@ ul.index a { color: #2980b9; text-decoration: none; }
 (configure-route :path "/case10" :component "case10-app"  :props '())
 (configure-route :path "/case11" :component "case11-app"  :props '())
 (configure-route :path "/case12" :component "case12-app"  :props '())
+(configure-route :path "/case13" :component "case13-app"  :props '())

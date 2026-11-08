@@ -167,6 +167,33 @@ function controlValue(el) {
 }
 
 /**
+ * Resolve an action's destination from its name.
+ *
+ * A callback passed down as a prop carries the id of the component that defines
+ * it -- "toggle-done@todo-0" -- because the name alone is not enough: an
+ * intervening child that happens to declare `toggle-done` would otherwise answer
+ * the click. Returns the action with its bare name, plus that component when the
+ * name was qualified.
+ */
+function resolveAction(action, mountContainer) {
+  const raw = String(action[0] ?? '');
+  const at = raw.lastIndexOf('@');
+  if (at < 0) return { action, owner: null };
+
+  const bare = [raw.slice(0, at), ...action.slice(1)];
+  const ownerId = raw.slice(at + 1);
+  const owner = mountContainer.querySelector(
+    `[data-component-id="${typeof CSS !== 'undefined' && CSS.escape
+      ? CSS.escape(ownerId) : ownerId}"]`);
+  if (!owner) {
+    // The component that defined it is no longer on the page; fall back to the
+    // name, which is what an unqualified callback does anyway.
+    console.warn(`cl-s3r: component "${ownerId}" for action "${bare[0]}" is not in the page`);
+  }
+  return { action: bare, owner };
+}
+
+/**
  * Find the component element that should handle the action named ACTION-NAME.
  * Walks up the component tree for the nearest ancestor that advertises the action
  * in its `data-actions` list, i.e. the component whose `let-function` defines it.
@@ -198,8 +225,9 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpire
     if (!trigger) return;
     event.preventDefault();
     try {
-      const action = JSON.parse(trigger.getAttribute('data-on-click'));
-      const owningComp = findActionTarget(trigger, action[0], mountContainer);
+      const { action, owner } = resolveAction(
+        JSON.parse(trigger.getAttribute('data-on-click')), mountContainer);
+      const owningComp = owner || findActionTarget(trigger, action[0], mountContainer);
       const root = mountContainer.firstElementChild;
       if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
     } catch (e) {
@@ -213,8 +241,9 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpire
     const trigger = event.target.closest('[data-on-change]');
     if (!trigger) return;
     try {
-      const action = JSON.parse(trigger.getAttribute('data-on-change'));
-      const owningComp = findActionTarget(trigger, action[0], mountContainer);
+      const { action, owner } = resolveAction(
+        JSON.parse(trigger.getAttribute('data-on-change')), mountContainer);
+      const owningComp = owner || findActionTarget(trigger, action[0], mountContainer);
       // The value comes from the control that fired, which may sit below the
       // element carrying the handler.
       action.push(controlValue(event.target));
@@ -230,9 +259,10 @@ export function initRuntime(rootSelector = 'body', { apiPrefix = '', tokenExpire
     if (!form) return;
     event.preventDefault();
     try {
-      const action = JSON.parse(form.getAttribute('data-on-submit'));
+      const { action, owner } = resolveAction(
+        JSON.parse(form.getAttribute('data-on-submit')), mountContainer);
       const formData = Object.fromEntries(new FormData(form).entries());
-      const owningComp = findActionTarget(form, action[0], mountContainer);
+      const owningComp = owner || findActionTarget(form, action[0], mountContainer);
       action.push(formData);
       const root = mountContainer.firstElementChild;
       if (root) sendAction(action, owningComp, root, { apiPrefix, tokenExpired });
